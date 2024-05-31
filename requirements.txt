@@ -1,0 +1,14 @@
+absl-py==2.1.0
+etils==1.3.0
+glfw==2.7.0
+imageio==2.34.1
+importlib_resources==6.4.0
+mujoco==2.3.7
+mujoco-python-viewer @ git+https://github.com/rpapallas/mujoco-python-viewer@f22f19929357fda4fa0101e0ab65a577434e466f
+numpy==1.24.4
+pillow==10.3.0
+PyOpenGL==3.1.7
+pyquaternion==0.9.9
+PyYAML==6.0.1
+typing_extensions==4.12.0
+zipp==3.19.0
