@@ -51,32 +51,12 @@ def get_optimisation_parameters(yaml_name):
         return optimiser_parameters
 
 
-def print_optimisation_result(result):
-    total_number_of_iterations = 0
-    total_rollout_times = []
-
-    indent = "    "
-    global_planning_time = 0.0
-    for i, optimisation_result in enumerate(result.models):
-        print(f'Model {i+1}')
-        print(f'{indent}Outcome: {optimisation_result.outcome.name}')
-
-        total_number_of_iterations += optimisation_result.iterations
-        total_rollout_times.append(sum(optimisation_result.rollout_times))
-
-        average_rollout_time = numpy.mean(optimisation_result.rollout_times)
-        print(f'{indent}Average rollout time: {average_rollout_time:.3f} (in {optimisation_result.iterations} iterations)')
-
-        print(f'{indent}Planning time: {optimisation_result.planning_time:.3f}')
-        global_planning_time += optimisation_result.planning_time
-        model_reduction_result = optimisation_result.model_reduction_result
-        if model_reduction_result:
-            time_elapsed = model_reduction_result.time
-            print(f'{indent}Model reduction time: {time_elapsed:.3f}.')
-
-    global_average_rollout_time = sum(total_rollout_times) / total_number_of_iterations if total_number_of_iterations > 0 else 0.0
-    print(f'Global average rollout time: {global_average_rollout_time:.3f} (in {total_number_of_iterations} iterations)')
-    print(f'Global planning time: {global_planning_time:.3f}')
+def print_optimisation_result(experiment_result):
+    optimisation_result = experiment_result.optimisation_result
+    print(f'Outcome: {optimisation_result.outcome.name}')
+    average_rollout_time = sum(optimisation_result.rollout_times) / optimisation_result.iterations if optimisation_result.iterations > 0 else 0.0
+    print(f'Average rollout time: {average_rollout_time:.3f} (in {optimisation_result.iterations} iterations)')
+    print(f'Planning time: {optimisation_result.planning_time:.3f}')
 
 
 def get_next_experiment_id():
@@ -107,7 +87,6 @@ def save_data_to_file(world_name, result):
                              result.models[-1].outcome.name,
                              [opt_result.rollout_times for opt_result in result.models],
                              sum([opt_result.planning_time for opt_result in result.models]),
-                             sum([opt_result.model_reduction_result.time for opt_result in result.models if opt_result.model_reduction_result]),
                              [opt_result.iterations for opt_result in result.models],
                              ])
 

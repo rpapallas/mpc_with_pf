@@ -31,6 +31,6 @@ class NMR(TrajectoryOptimiserBase):
                       self.simulators['main'].model_filename,
                       start_arm_configuration, 
                       start_hand_configuration,
-                      [result])
+                      result)
 
 

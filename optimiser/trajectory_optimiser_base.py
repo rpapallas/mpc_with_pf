@@ -68,9 +68,9 @@ class TrajectoryOptimiserBase:
         def get_desired_position_waypoints():
             hand_initial_x, hand_initial_y, _ = self.simulators['main'].robot.end_effector_position
 
-            goal_object_position = self.simulators['main'].get_object_position(self.goal_object_name)
-            hand_final_x = goal_object_position[0] + 0.05
-            hand_final_y = goal_object_position[1] + 0.05
+            goal_region_position = self.simulators['main'].get_object_position('goal_region')
+            hand_final_x = goal_region_position[0]
+            hand_final_y = goal_region_position[1]
 
             desired_xs = np.linspace(hand_initial_x, hand_final_x, num=800)[1:]
             desired_ys = np.linspace(hand_initial_y, hand_final_y, num=800)[1:]
@@ -167,11 +167,10 @@ class TrajectoryOptimiserBase:
         best_rollout, self.initial_traj_state_sequence = self.rollout(best_trajectory, with_simulator_name='rollout_0')
         initial_cost = best_rollout.cost
 
-        logging.debug(f'Initial cost: {initial_cost}')
+        logging.debug(f'Initial cost: {initial_cost:.2f}')
 
-        cost_history = [initial_cost]
         rollout_times = []
-        logging.debug(f'Initial check of traj took roughly: {time.time() - optimisation_start_time} seconds.')
+        logging.debug(f'Initial check of traj took roughly: {time.time() - optimisation_start_time:.2f} seconds.')
         previous_best_rollout = deepcopy(best_rollout)
 
         time_limit = self.optimisation_parameters['time_limit']
@@ -187,7 +186,6 @@ class TrajectoryOptimiserBase:
 
             best_rollout = min(noisy_rollouts + [best_rollout], key=lambda rollout: rollout.cost)
             best_trajectory = best_rollout.trajectory
-            cost_history.append(best_rollout.cost)
 
             if abs(previous_best_rollout.cost - best_rollout.cost) <= 0.01:
                 consecutive_non_improving_iterations += 1
@@ -196,7 +194,7 @@ class TrajectoryOptimiserBase:
 
             previous_best_rollout = deepcopy(best_rollout)
 
-            logging.info(f'{iteration}: Current cost: {best_rollout.cost} (initial: {initial_cost})')
+            logging.info(f'{iteration}: Current cost: {best_rollout.cost:.2f} (initial: {initial_cost:.2f}, distance to goal: {best_rollout.distance_to_goal:.2f})')
             planning_time = time.time() - optimisation_start_time
 
             if consecutive_non_improving_iterations >= local_minima_iterations:
@@ -216,7 +214,6 @@ class TrajectoryOptimiserBase:
             outcome=optimisation_outcome,
             best_trajectory=deepcopy(best_trajectory),
             rollout_times=rollout_times,
-            cost_history=cost_history,
             planning_time=planning_time
         )
 
@@ -268,8 +265,12 @@ class TrajectoryOptimiserBase:
             state = self.get_state(with_simulator_name)
             state_sequence.append(state)
 
+        goal_region_position = self.simulators['main'].get_object_position('goal_region')
+        goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
+        
         goal_object_position = state.objects[self.goal_object_name].position
-        distance_to_goal = np.linalg.norm(goal_object_position - state.hand_position)
+        goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
+        distance_to_goal = np.linalg.norm(goal_object_position - goal_region_position)
 
         cost_sequence = self.cost_of(state_sequence)
 
@@ -303,18 +304,19 @@ class TrajectoryOptimiserBase:
                         cost += force_y * 10
                         cost += force_z * 10
 
-            if i == len(state_sequence) - 1:  # Last state
-                goal_object_position = state.objects[self.goal_object_name].position
-                euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - state.hand_position)
-                cost += euclidean_distance_hand_to_goal_object * 7_000
+            goal_region_position = self.simulators['main'].get_object_position('goal_region')
+            goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
+            
+            goal_object_position = state.objects[self.goal_object_name].position
+            goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
 
-                if self.initial_traj_state_sequence:
-                    diff_quat = self.initial_traj_state_sequence[i].hand_orientation * state.hand_orientation.inverse
-                    axis_x = abs(diff_quat.axis[0])
-                    axis_y = abs(diff_quat.axis[1])
-                    if axis_x > 0.1 or axis_y > 0.1:
-                        if diff_quat.degrees > 20:
-                            cost += abs(diff_quat.degrees) * 1000
+            euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - goal_region_position)
+            cost += euclidean_distance_hand_to_goal_object * 1000
+
+            if self.initial_traj_state_sequence:
+                initial_hand_position = self.initial_traj_state_sequence[i].hand_position[2]
+                current_hand_position = state.hand_position[2]
+                cost += abs(initial_hand_position - current_hand_position) * 1000
 
             cost_sequence.append(cost)
 

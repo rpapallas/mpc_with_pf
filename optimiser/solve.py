@@ -104,10 +104,10 @@ if __name__ == '__main__':
         visualise(trajectory_optimiser.initial_trajectory)
     else:
         initial_trajectory = trajectory_optimiser.initial_trajectory
-        optimisation_result = trajectory_optimiser.optimise(initial_trajectory)
-        utils.print_optimisation_result(optimisation_result)
+        experiment_result = trajectory_optimiser.optimise(initial_trajectory)
+        utils.print_optimisation_result(experiment_result)
 
         if args.save:
-            utils.save_data_to_file(args.model_filename, optimisation_result)
+            utils.save_data_to_file(args.model_filename, experiment_result)
         if args.view_solution:
-            visualise(optimisation_result.models[-1].best_trajectory)
+            visualise(experiment_result.optimisation_result.best_trajectory)

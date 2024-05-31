@@ -41,4 +41,4 @@ class Result:
     world_file_name: str
     start_arm_configuration: list
     start_hand_configuration: list
-    models: list
+    optimisation_result: OptimisationResult
