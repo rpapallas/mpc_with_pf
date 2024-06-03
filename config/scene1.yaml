@@ -1,4 +1,4 @@
-goal_object_name: 'movable_obstacle_1'
+goal_object_name: 'Parmesan'
 check_forces: false
 force_threshold: 20
 distance_to_goal: 0.05
@@ -14,9 +14,9 @@ joint_noise_sigmas:
   - 0.3
   - 0.3
   - 0.3
+other_obstacle_names: []
 static_obstacle_names:
   - 'floor'
-  - 'shelf'
 robot_initial_configuration: 
   - -0.937
   - 0.674

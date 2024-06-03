@@ -44,16 +44,20 @@ class TrajectoryOptimiserBase:
         self.initial_traj_state_sequence = None
 
         # All object names except the goal object name.
-        self.all_obstacle_names = self.simulators['main'].get_object_names(prefix='movable_obstacle_')
+        self.all_obstacle_names = self.other_obstacle_names
 
         # All objects including the goal object
-        self.all_objects_names = deepcopy(self.all_obstacle_names)
+        self.all_objects_names = deepcopy(set(self.all_obstacle_names))
         self.all_objects_names.add(self.goal_object_name)
         self.list_of_trajs = []
 
     @property
     def static_obstacle_names(self):
         return self.optimisation_parameters['static_obstacle_names']
+
+    @property
+    def other_obstacle_names(self):
+        return self.optimisation_parameters['other_obstacle_names']
 
     @property
     def goal_object_name(self):
@@ -316,7 +320,7 @@ class TrajectoryOptimiserBase:
             if self.initial_traj_state_sequence:
                 initial_hand_position = self.initial_traj_state_sequence[i].hand_position[2]
                 current_hand_position = state.hand_position[2]
-                cost += abs(initial_hand_position - current_hand_position) * 1000
+                cost += abs(initial_hand_position - current_hand_position) * 100
 
             cost_sequence.append(cost)
 

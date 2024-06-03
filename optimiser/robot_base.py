@@ -16,8 +16,11 @@
 
 
 import mujoco
+import rospy
 import numpy as np
 from copy import deepcopy
+from std_msgs.msg import Float64MultiArray
+from controller_manager import ControllerManager
 
 
 class RobotBase:
@@ -27,11 +30,33 @@ class RobotBase:
         self.name = robot_name
         self.joint_names = joint_names
         self.end_effector_name = end_effector_name
+        self.real_robot_set_up = False
 
     def set_arm_configuration(self, config):
         for i, joint_name in enumerate(self.joint_names):
             self.data.joint(joint_name).qpos = config[i]
         mujoco.mj_forward(self.model, self.data)
+
+    def setup_trajectory_controller(self):
+        self.controller_manager = ControllerManager()
+        self.controller_manager.switch_to('effort_group_position_controller')
+        self.joint_positions_publisher = rospy.Publisher('/effort_group_position_controller/command', Float64MultiArray, queue_size = 1)
+        self.real_robot_set_up = True
+
+    def execute_position_trajectory(self, trajectory):
+        rate = rospy.Rate(1000) # 1000hz
+        for controls in trajectory:
+            positions = Float64MultiArray()
+            positions.data = controls
+
+            for _ in range(4):
+                self.joint_positions_publisher.publish(positions)
+                rate.sleep()
+
+        # Sending this last one to force the robot to stop.
+        #positions = Float64MultiArray()
+        #positions.data = self.live_real_world_state['robot_joints']
+        #self.joint_positions_publisher.publish(positions)
 
     @property
     def arm_configuration(self):

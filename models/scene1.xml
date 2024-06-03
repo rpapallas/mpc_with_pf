@@ -9,17 +9,17 @@
         <include file="includes/camera.xml" />
         <include file="includes/floor.xml" />
 
-        <body name="movable_obstacle_1" pos="0.46 -0.1 0.049" quat="0.9425011011552852 6.944563820305492e-09 -4.454331459724606e-10 0.33420304355447583">
-            <geom mass="0.01" friction="0.1 0.1 0.1" name="geom_movable_obstacle_1" rgba="0 1 0. 1" size="0.03 0.05" type="cylinder" />
-            <joint name="joint_movable_obstacle_1" type="free" />
+        <body name="Parmesan" pos="0.46 -0.1 0.099" quat="0.9425011011552852 6.944563820305492e-09 -4.454331459724606e-10 0.33420304355447583">
+            <geom mass="0.1" friction="0.1 0.1 0.1" name="geom_Parmesan" rgba="0 1 0. 1" size="0.0325 0.05" pos="0 0 -0.0999" type="cylinder" />
+            <joint name="joint_Parmesan" type="free" />
         </body>
 
-        <body name="movable_obstacle_2" pos="0.49 -0.2 0.049" quat="0.7331034903943917 -9.378339351141285e-09 2.04142690189577e-09 0.6801171019549208">
+        <body name="movable_obstacle_2" pos="1.49 -0.2 0.049" quat="0.7331034903943917 -9.378339351141285e-09 2.04142690189577e-09 0.6801171019549208">
             <geom mass="0.01" friction="0.1 0.1 0.1" name="geom_movable_obstacle_2" rgba="1 0 0. 1" size="0.03 0.05" type="cylinder" />
             <joint name="joint_movable_obstacle_2" type="free" />
         </body>
 
-        <body pos="0.8 -0.2 0" name="goal_region">
+        <body pos="0.58 0.055 0" name="goal_region">
             <geom type="box" pos="0 0 0" size=".0001 .0001 .0000001" rgba="0 0 0 0" mass="1" margin="0.001" contype="4" conaffinity="4" />
             <site type="cylinder" pos="0 0 0.001" size="0.11 0.0001" rgba="0 1 0 0.4"/>
         </body>
