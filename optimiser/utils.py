@@ -16,19 +16,21 @@
 
 
 import csv
+import time
 import sys
 from pathlib import Path
 import os
 import mujoco
-import numpy
 import yaml
 from discovered_optimisers import all_optimisers
+from threading import Thread
 from simulator import Simulator
+from mujoco_viewer import MujocoViewer
 
 
-def optimiser_factory(optimiser_name, simulator):
+def optimiser_factory(optimiser_name):
     if optimiser_name.upper() in all_optimisers.keys():
-        return all_optimisers[optimiser_name.upper()](simulator)
+        return all_optimisers[optimiser_name.upper()](sim)
     else:
         available_planners = ", ".join(list(all_optimisers.keys()))
         sys.exit(f'Unrecognised optimiser name. Possible planners: {available_planners}')
@@ -91,3 +93,48 @@ def save_data_to_file(world_name, result):
                              ])
 
         update_next_experiment_id_file()
+
+
+def reset_simulation():
+    sim.reset()
+    mujoco_viewer.data = sim.data
+    mujoco_viewer.model = sim.model
+
+
+def infinitely_execute_trajectory_in_simulation(trajectory):
+    while not keyboard_interrupted:
+        reset_simulation(sim)
+        for arm_controls, gripper_controls in trajectory:
+            while is_paused and not keyboard_interrupted:
+                if keyboard_interrupted:
+                    return
+                continue
+            sim.execute_control(arm_controls, gripper_controls)
+            time.sleep(sim.timestep)
+        time.sleep(1)
+
+def visualise(simulator, trajectory):
+    global keyboard_interrupted, mujoco_viewer, sim
+    sim = simulator
+    keyboard_interrupted = False
+
+    mujoco_viewer = MujocoViewer(sim.model, sim.data, width=700,
+                                 height=500, title=f'Solving',
+                                 hide_menus=True)
+
+    main_thread = Thread(target=infinitely_execute_trajectory_in_simulation, args=(trajectory,))
+    main_thread.start()
+
+    global is_paused
+    is_paused = False
+    try:
+        while mujoco_viewer.is_alive:
+            is_paused = mujoco_viewer._paused
+            mujoco_viewer.render()
+    except KeyboardInterrupt:
+        print('Quitting')
+
+    keyboard_interrupted = True
+    mujoco_viewer.close()
+    main_thread.join()
+

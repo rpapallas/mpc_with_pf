@@ -44,19 +44,17 @@ class RobotBase:
         self.real_robot_set_up = True
 
     def execute_position_trajectory(self, trajectory):
+        for control in trajectory:
+            self.execute_control(control)
+
+    def execute_control(self, control):
         rate = rospy.Rate(1000) # 1000hz
-        for controls in trajectory:
-            positions = Float64MultiArray()
-            positions.data = controls
+        positions = Float64MultiArray()
+        positions.data = control
 
-            for _ in range(4):
-                self.joint_positions_publisher.publish(positions)
-                rate.sleep()
-
-        # Sending this last one to force the robot to stop.
-        #positions = Float64MultiArray()
-        #positions.data = self.live_real_world_state['robot_joints']
-        #self.joint_positions_publisher.publish(positions)
+        for _ in range(4):
+            self.joint_positions_publisher.publish(positions)
+            rate.sleep()
 
     @property
     def arm_configuration(self):
