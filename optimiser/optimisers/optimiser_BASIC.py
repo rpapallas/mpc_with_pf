@@ -20,7 +20,7 @@ from results import Result
 
 
 @register_optimiser
-class NMR(TrajectoryOptimiserBase):
+class BASIC(TrajectoryOptimiserBase):
     def optimise(self, trajectory):
         start_arm_configuration = self.simulators['main'].robot.arm_configuration
         start_hand_configuration = self.simulators['main'].robot.end_effector_configuration

@@ -96,10 +96,6 @@ def real_robot_dope_mpc_execution(experiment_result):
         utils.print_optimisation_result(experiment_result)
 
 def real_robot_pf_mpc_execution(experiment_result):
-    optimised_traj = experiment_result.optimisation_result.best_trajectory
-    position_traj = convert_to_position_traj(optimised_traj)
-    simulator.robot.setup_trajectory_controller()
-    simulator.robot.execute_position_trajectory(position_traj)
     while True:
         optimised_traj = experiment_result.optimisation_result.best_trajectory
         position_traj = convert_to_position_traj(optimised_traj)
