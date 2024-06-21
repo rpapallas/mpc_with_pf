@@ -22,8 +22,8 @@ import utils
 from optimisers.discovered_optimisers import all_optimisers
 from panda import Panda
 from dope import DOPE
-import rospy
-from sensor_msgs.msg import JointState
+# import rospy
+# from sensor_msgs.msg import JointState
 
 
 def arg_parser():

@@ -19,7 +19,7 @@ from trajectory_optimiser_base import TrajectoryOptimiserBase
 from results import Result
 import logging
 import random
-import rospy
+# import rospy
 import multiprocessing
 
 

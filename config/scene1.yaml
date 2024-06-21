@@ -5,7 +5,7 @@ distance_to_goal: 0.05
 time_limit: 180
 max_iterations: 50
 local_minima_iterations: 15
-number_of_rollouts: 60
+number_of_rollouts: 8
 joint_noise_sigmas:
   - 0.3
   - 0.3

@@ -16,11 +16,11 @@
 
 
 import mujoco
-import rospy
+# import rospy
 import numpy as np
 from copy import deepcopy
-from std_msgs.msg import Float64MultiArray
-from controller_manager import ControllerManager
+# from std_msgs.msg import Float64MultiArray
+# from controller_manager import ControllerManager
 
 
 class RobotBase:
@@ -38,9 +38,9 @@ class RobotBase:
         mujoco.mj_forward(self.model, self.data)
 
     def setup_trajectory_controller(self):
-        self.controller_manager = ControllerManager()
-        self.controller_manager.switch_to('effort_group_position_controller')
-        self.joint_positions_publisher = rospy.Publisher('/effort_group_position_controller/command', Float64MultiArray, queue_size = 1)
+        # self.controller_manager = ControllerManager()
+        # self.controller_manager.switch_to('effort_group_position_controller')
+        # self.joint_positions_publisher = rospy.Publisher('/effort_group_position_controller/command', Float64MultiArray, queue_size = 1)
         self.real_robot_set_up = True
 
     def execute_position_trajectory(self, trajectory):

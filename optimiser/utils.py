@@ -28,9 +28,9 @@ from simulator import Simulator
 from mujoco_viewer import MujocoViewer
 
 
-def optimiser_factory(optimiser_name):
+def optimiser_factory(optimiser_name, simulator):
     if optimiser_name.upper() in all_optimisers.keys():
-        return all_optimisers[optimiser_name.upper()](sim)
+        return all_optimisers[optimiser_name.upper()](simulator)
     else:
         available_planners = ", ".join(list(all_optimisers.keys()))
         sys.exit(f'Unrecognised optimiser name. Possible planners: {available_planners}')
