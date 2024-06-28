@@ -19,7 +19,6 @@ from copy import deepcopy
 from trajectory_optimiser_base import TrajectoryOptimiserBase
 from results import Result
 from cost_sequence import CostSequence
-from states import StateSequence
 from rollout import RollOut
 import random
 import numpy as np
@@ -35,7 +34,7 @@ class PF_Base(TrajectoryOptimiserBase):
         # Fanout is the number of particles that will be considered for every
         # noisy trajectory. If we have k noisy trajectories, then each noisy
         # trajectory will be evaluated over fanout_number particles.
-        self.fanout_number = 5
+        self.fanout_number = 4
 
         super().__init__(main_simulator)
 
@@ -56,11 +55,18 @@ class PF_Base(TrajectoryOptimiserBase):
 
         for process, pipe in processes:
             process.join()
-            rollout_results.append(pipe.recv())
+            rollout = pipe.recv()
+            rollout_results.append(rollout)
 
         return rollout_results
 
     def rollout_fanout(self, simulator_index, trajectory, pipe_child):
+        # This is needed due to how multiprocessing works which will fork the
+        # main process, including the seed for numpy random library and as a
+        # result, if the seed is not re-generated in each process, each
+        # process will  generate the same noisy trajectory.
+        np.random.seed()
+
         def relative_to_absolute(robot_position, robot_orientation, object_relative_pose):
             object_relative_position = (object_relative_pose.position.x, object_relative_pose.position.y, object_relative_pose.position.z)
             object_relative_orientation = (object_relative_pose.orientation.x, object_relative_pose.orientation.y, object_relative_pose.orientation.z, object_relative_pose.orientation.w)
@@ -123,7 +129,8 @@ class PF_Base(TrajectoryOptimiserBase):
         rollouts = []
         for process, pipe in processes:
             process.join()
-            rollouts.append(pipe.recv())
+            rollout = pipe.recv()
+            rollouts.append(rollout)
 
         rollout = self.aggregate(rollouts)
         return rollout
