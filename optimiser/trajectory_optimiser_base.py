@@ -156,7 +156,7 @@ class TrajectoryOptimiserBase:
         self.simulators['main'].reset()
         return deepcopy(initial_trajectory)
 
-    def optimise(self, initial_trajectory):
+    def optimise_traj(self, initial_trajectory):
         logging.info('Starting optimisation...')
         logging.debug(f'Parallel rollouts: {self.num_of_rollouts}')
 
@@ -168,7 +168,8 @@ class TrajectoryOptimiserBase:
 
         best_trajectory = deepcopy(initial_trajectory)
         self.list_of_trajs.append(deepcopy(best_trajectory))
-        best_rollout, self.initial_traj_state_sequence = self.rollout(best_trajectory, with_simulator_name='rollout_0')
+        self.initial_traj_state_sequence = self.get_state_sequence(best_trajectory, 'rollout_0')
+        best_rollout = self.rollout(best_trajectory, with_simulator_name='rollout_0')
         initial_cost = best_rollout.cost
 
         logging.debug(f'Initial cost: {initial_cost:.2f}')
@@ -253,7 +254,7 @@ class TrajectoryOptimiserBase:
                 joint_noise = np.random.normal(0.0, joint_noise_sigma, 1)[0]
                 base_trajectory[i][0][j] += joint_noise
 
-        rollout, _ = self.rollout(base_trajectory, with_simulator_name=sim_name)
+        rollout = self.rollout(base_trajectory, with_simulator_name=sim_name)
         if pipe:  # Multi-processing
             pipe.send(rollout)
         else:  # Single-processing
@@ -262,24 +263,29 @@ class TrajectoryOptimiserBase:
     def rollout(self, trajectory, with_simulator_name):
         self.simulators[with_simulator_name].reset()
 
-        state_sequence = StateSequence()
-        state = None
-        for arm_controls, gripper_controls in trajectory:
-            self.simulators[with_simulator_name].execute_control(arm_controls, gripper_controls)
-            state = self.get_state(with_simulator_name)
-            state_sequence.append(state)
+        state_sequence = self.get_state_sequence(trajectory, with_simulator_name)
+        last_state = state_sequence[-1]
 
         goal_region_position = self.simulators['main'].get_object_position('goal_region')
         goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
         
-        goal_object_position = state.objects[self.goal_object_name].position
+        goal_object_position = last_state.objects[self.goal_object_name].position
         goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
         distance_to_goal = np.linalg.norm(goal_object_position - goal_region_position)
 
         cost_sequence = self.cost_of(state_sequence)
 
+        return RollOut(trajectory, cost_sequence, distance_to_goal)
+
+    def get_state_sequence(self, trajectory, with_simulator_name):
+        state_sequence = StateSequence()
+        for arm_controls, gripper_controls in trajectory:
+            self.simulators[with_simulator_name].execute_control(arm_controls, gripper_controls)
+            state = self.get_state(with_simulator_name)
+            state_sequence.append(state)
+
         self.simulators[with_simulator_name].reset()
-        return RollOut(trajectory, cost_sequence, distance_to_goal), state_sequence
+        return state_sequence
 
     def cost_of(self, state_sequence):
         cost_sequence = CostSequence()

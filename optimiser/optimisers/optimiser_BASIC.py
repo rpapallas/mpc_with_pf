@@ -25,7 +25,7 @@ class BASIC(TrajectoryOptimiserBase):
         start_arm_configuration = self.simulators['main'].robot.arm_configuration
         start_hand_configuration = self.simulators['main'].robot.end_effector_configuration
 
-        result = super().optimise(trajectory)
+        result = self.optimise_traj(trajectory)
 
         return Result(self.__class__.__name__, 
                       self.simulators['main'].model_filename,
