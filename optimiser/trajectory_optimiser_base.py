@@ -303,17 +303,6 @@ class TrajectoryOptimiserBase:
                 if diff_pos > 0.05:
                     cost += diff_pos * 200
 
-            if state.object_forces:
-                for force in state.object_forces:
-                    force_x = abs(force[0])
-                    force_y = abs(force[1])
-                    force_z = abs(force[2])
-
-                    if force_x > force_threshold or force_y > force_threshold or force_z > force_threshold:
-                        cost += force_x * 10
-                        cost += force_y * 10
-                        cost += force_z * 10
-
             goal_region_position = self.simulators['main'].get_object_position('goal_region')
             goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
             
@@ -323,10 +312,10 @@ class TrajectoryOptimiserBase:
             euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - goal_region_position)
             cost += euclidean_distance_hand_to_goal_object * 1000
 
-            if self.initial_traj_state_sequence:
+            if i == len(state_sequence) - 1 and self.initial_traj_state_sequence:
                 initial_hand_position = self.initial_traj_state_sequence[i].hand_position[2]
                 current_hand_position = state.hand_position[2]
-                cost += abs(initial_hand_position - current_hand_position) * 100
+                cost += np.linalg.norm(initial_hand_position - current_hand_position) * 1000
 
             cost_sequence.append(cost)
 

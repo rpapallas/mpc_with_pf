@@ -34,7 +34,7 @@ class PF_Base(TrajectoryOptimiserBase):
         # Fanout is the number of particles that will be considered for every
         # noisy trajectory. If we have k noisy trajectories, then each noisy
         # trajectory will be evaluated over fanout_number particles.
-        self.fanout_number = 4
+        self.fanout_number = 5
 
         super().__init__(main_simulator)
 
@@ -116,6 +116,12 @@ class PF_Base(TrajectoryOptimiserBase):
         pipe_child.send(rollout)
 
     def rollout(self, trajectory, with_simulator_name):
+        # This is needed due to how multiprocessing works which will fork the
+        # main process, including the seed for numpy random library and as a
+        # result, if the seed is not re-generated in each process, each
+        # process will  generate the same noisy trajectory.
+        np.random.seed()
+
         start_simulator_index = int(with_simulator_name.split('_')[1])
 
         processes = []
@@ -153,9 +159,7 @@ class PF_WorstAggregation(PF_Base):
         worst_rollout = rollouts[0]
         for i in range(1, self.fanout_number):
             current_rollout = rollouts[i]
-            current_cost = current_rollout.cost_sequence.total
-            best_cost = worst_rollout.cost_sequence.total
-            if current_cost > best_cost:
+            if current_rollout.cost > worst_rollout.cost:
                 worst_rollout = current_rollout
 
         return worst_rollout
@@ -171,9 +175,7 @@ class PF_AverageAggregation(PF_Base):
         best_rollout = rollouts[0]
         for i in range(1, self.fanout_number):
             current_rollout = rollouts[i]
-            current_cost = current_rollout.cost_sequence.total
-            best_cost = best_rollout.cost_sequence.total
-            if current_cost < best_cost:
+            if current_rollout.cost < best_rollout.cost:
                 best_rollout = current_rollout
 
         average_cost = total_cost / self.fanout_number
