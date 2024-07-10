@@ -22,8 +22,6 @@ from cost_sequence import CostSequence
 from rollout import RollOut
 import random
 import numpy as np
-# import tf
-# import rospy
 import multiprocessing
 
 
