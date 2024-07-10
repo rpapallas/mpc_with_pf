@@ -135,6 +135,12 @@ class Simulator:
     def get_body_name(self, body_id: int):
         return mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_BODY, body_id)
 
+    def get_object_velocity(self, object_name):
+        body_id = self.get_body_id(object_name)
+        joint_index = self.model.body_jntadr[body_id]
+        qvel_index = self.model.jnt_qposadr[joint_index]
+        return self.data.qpos[qvel_index:qvel_index+7]
+
     def get_object_position(self, object_name: str):
         object_position = self.data.body(object_name).xpos.copy()
         return deepcopy(np.array(object_position))
@@ -159,11 +165,11 @@ class Simulator:
             self.data.qpos[qpos_index + 1] = y
         if z:
             self.data.qpos[qpos_index + 2] = z
-        if quaternion:
-            self.data.body(object_name).xquat[3] = quaternion[0]
-            self.data.body(object_name).xquat[0] = quaternion[1]
-            self.data.body(object_name).xquat[1] = quaternion[2]
-            self.data.body(object_name).xquat[2] = quaternion[3]
+        if quaternion is not None:
+            self.data.qpos[qpos_index + 3] = quaternion.w
+            self.data.qpos[qpos_index + 4] = quaternion.x
+            self.data.qpos[qpos_index + 5] = quaternion.y
+            self.data.qpos[qpos_index + 6] = quaternion.z
 
         self.forward()
 

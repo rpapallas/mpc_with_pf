@@ -16,11 +16,12 @@
 
 
 import mujoco
-# import rospy
+import rospy
 import numpy as np
 from copy import deepcopy
-# from std_msgs.msg import Float64MultiArray
-# from controller_manager import ControllerManager
+from std_msgs.msg import Float64MultiArray
+from controller_manager import ControllerManager
+from sensor_msgs.msg import JointState
 
 
 class RobotBase:
@@ -31,16 +32,20 @@ class RobotBase:
         self.joint_names = joint_names
         self.end_effector_name = end_effector_name
         self.real_robot_set_up = False
-
+        self.sub = rospy.Subscriber('/joint_states', JointState, self.joint_values_callback)
+        
+    def joint_values_callback(self, message):
+        self.joint_angles = message.position[:7]
+        
     def set_arm_configuration(self, config):
         for i, joint_name in enumerate(self.joint_names):
             self.data.joint(joint_name).qpos = config[i]
         mujoco.mj_forward(self.model, self.data)
 
     def setup_trajectory_controller(self):
-        # self.controller_manager = ControllerManager()
-        # self.controller_manager.switch_to('effort_group_position_controller')
-        # self.joint_positions_publisher = rospy.Publisher('/effort_group_position_controller/command', Float64MultiArray, queue_size = 1)
+        self.controller_manager = ControllerManager()
+        self.controller_manager.switch_to('effort_group_position_controller')
+        self.joint_positions_publisher = rospy.Publisher('/effort_group_position_controller/command', Float64MultiArray, queue_size = 1)
         self.real_robot_set_up = True
 
     def execute_position_trajectory(self, trajectory):
@@ -48,13 +53,21 @@ class RobotBase:
             self.execute_control(control)
 
     def execute_control(self, control):
-        rate = rospy.Rate(1000) # 1000hz
+        rate = rospy.Rate(1000) # 3000hz
         positions = Float64MultiArray()
         positions.data = control
-
-        for _ in range(4):
+        for i in range(10):
             self.joint_positions_publisher.publish(positions)
             rate.sleep()
+
+        # while True:
+        #     distance = np.linalg.norm(np.array(control) - np.array(self.joint_angles))
+        #     print(distance)
+        #     if distance < 0.05:
+        #         break
+            
+        #     self.joint_positions_publisher.publish(positions)
+        #     rate.sleep()
 
     @property
     def arm_configuration(self):

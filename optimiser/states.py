@@ -33,6 +33,7 @@ class State:
     robot_joint_velocities: List
     hand_position: List
     hand_orientation: Quaternion
+    hand_velocity: List
     objects: Dict
     object_forces: List
     robot_in_collision_with_static_obstacles: bool

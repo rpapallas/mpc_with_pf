@@ -15,7 +15,7 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 
-import logging
+import rospy
 import multiprocessing
 import math
 from copy import copy, deepcopy
@@ -28,6 +28,7 @@ from results import OptimisationOutcome, OptimisationResult
 from rollout import RollOut
 from states import StateSequence, ObjectState, State
 from trajectory import Trajectory
+from scipy.spatial.transform import Rotation
 
 
 class TrajectoryOptimiserBase:
@@ -40,7 +41,6 @@ class TrajectoryOptimiserBase:
 
         # Also have a main simulator
         self.simulators['main'] = copy(main_simulator)
-        self.simulators['full_model'] = copy(main_simulator)
         self.initial_traj_state_sequence = None
 
         # All object names except the goal object name.
@@ -49,7 +49,6 @@ class TrajectoryOptimiserBase:
         # All objects including the goal object
         self.all_objects_names = deepcopy(set(self.all_obstacle_names))
         self.all_objects_names.add(self.goal_object_name)
-        self.list_of_trajs = []
 
     @property
     def static_obstacle_names(self):
@@ -72,12 +71,24 @@ class TrajectoryOptimiserBase:
         def get_desired_position_waypoints():
             hand_initial_x, hand_initial_y, _ = self.simulators['main'].robot.end_effector_position
 
-            goal_region_position = self.simulators['main'].get_object_position('goal_region')
-            hand_final_x = goal_region_position[0]
-            hand_final_y = goal_region_position[1]
+            goal_object_position = self.simulators['main'].get_object_position(self.goal_object_name)
+            hand_final_x = goal_object_position[0]
+            hand_final_y = goal_object_position[1]
 
-            desired_xs = np.linspace(hand_initial_x, hand_final_x, num=800)[1:]
-            desired_ys = np.linspace(hand_initial_y, hand_final_y, num=800)[1:]
+            desired_xs_1 = np.linspace(hand_initial_x, hand_final_x, num=300)[1:]
+            desired_ys_1 = np.linspace(hand_initial_y, hand_final_y, num=300)[1:]
+
+            hand_initial_x, hand_initial_y = hand_final_x, hand_final_y
+
+            goal_region_position = self.simulators['main'].get_object_position('goal_region')
+            hand_final_x = goal_region_position[0] - 0.05
+            hand_final_y = goal_region_position[1] - 0.05
+
+            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=700)[1:]
+            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=700)[1:]
+
+            desired_xs = np.concatenate([desired_xs_1, desired_xs_2])
+            desired_ys = np.concatenate([desired_ys_1, desired_ys_2])
 
             return desired_xs, desired_ys
 
@@ -157,8 +168,11 @@ class TrajectoryOptimiserBase:
         return deepcopy(initial_trajectory)
 
     def optimise_traj(self, initial_trajectory):
-        logging.info('Starting optimisation...')
-        logging.debug(f'Parallel rollouts: {self.num_of_rollouts}')
+        for name in self.simulators.keys():
+            self.simulators[name].reset()
+
+        rospy.loginfo('Starting optimisation...')
+        rospy.loginfo(f'Parallel rollouts: {self.num_of_rollouts}')
 
         optimisation_outcome = OptimisationOutcome.SUCCESS
         iteration = 0
@@ -167,15 +181,14 @@ class TrajectoryOptimiserBase:
         optimisation_start_time = time.time()
 
         best_trajectory = deepcopy(initial_trajectory)
-        self.list_of_trajs.append(deepcopy(best_trajectory))
         self.initial_traj_state_sequence = self.get_state_sequence(best_trajectory, 'rollout_0')
         best_rollout = self.rollout(best_trajectory, with_simulator_name='rollout_0')
         initial_cost = best_rollout.cost
 
-        logging.debug(f'Initial cost: {initial_cost:.2f}')
+        rospy.loginfo(f'Initial cost: {initial_cost:.2f}')
 
         rollout_times = []
-        logging.debug(f'Initial check of traj took roughly: {time.time() - optimisation_start_time:.2f} seconds.')
+        rospy.loginfo(f'Initial check of traj took roughly: {time.time() - optimisation_start_time:.2f} seconds.')
         previous_best_rollout = deepcopy(best_rollout)
 
         time_limit = self.optimisation_parameters['time_limit']
@@ -199,7 +212,7 @@ class TrajectoryOptimiserBase:
 
             previous_best_rollout = deepcopy(best_rollout)
 
-            logging.info(f'{iteration}: Current cost: {best_rollout.cost:.2f} (initial: {initial_cost:.2f}, distance to goal: {best_rollout.distance_to_goal:.2f})')
+            rospy.loginfo(f'{iteration}: Current cost: {best_rollout.cost:,.2f} (initial: {initial_cost:,.2f}, distance to goal: {best_rollout.distance_to_goal:,.2f})')
             planning_time = time.time() - optimisation_start_time
 
             if consecutive_non_improving_iterations >= local_minima_iterations:
@@ -292,16 +305,15 @@ class TrajectoryOptimiserBase:
 
         force_threshold = self.optimisation_parameters['force_threshold']
 
+        initial_state = state_sequence[0]
+
         for i, state in enumerate(state_sequence):
             cost = 0.0
 
             if state.robot_in_collision_with_static_obstacles:
-                cost += 1_000
+                cost += 10_000
 
-            if self.initial_traj_state_sequence:
-                diff_pos = abs(self.initial_traj_state_sequence[i].hand_position[2] - state.hand_position[2])
-                if diff_pos > 0.05:
-                    cost += diff_pos * 200
+            cost += abs(sum(state.hand_velocity)) * 3_000
 
             goal_region_position = self.simulators['main'].get_object_position('goal_region')
             goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
@@ -309,13 +321,26 @@ class TrajectoryOptimiserBase:
             goal_object_position = state.objects[self.goal_object_name].position
             goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
 
-            euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - goal_region_position)
-            cost += euclidean_distance_hand_to_goal_object * 1000
+            euclidean_distance_object_to_region = np.linalg.norm(goal_object_position - goal_region_position)
+            cost += euclidean_distance_object_to_region * 60_000
 
-            if i == len(state_sequence) - 1 and self.initial_traj_state_sequence:
-                initial_hand_position = self.initial_traj_state_sequence[i].hand_position[2]
-                current_hand_position = state.hand_position[2]
-                cost += np.linalg.norm(initial_hand_position - current_hand_position) * 1000
+            hand_position = state.hand_position
+            hand_position = np.array([hand_position[0], hand_position[1]])
+            euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - hand_position)
+            cost += euclidean_distance_hand_to_goal_object * 20_000
+
+            for object_name in state.objects.keys():
+                quat0 = initial_state.objects[object_name].orientation
+                q0 = Quaternion(w=quat0[0],x=quat0[1],y=quat0[2],z=quat0[3])
+                r0 = Rotation.from_quat([q0.x, q0.y, q0.z, q0.w])
+                euler0 = r0.as_euler('xyz', degrees=False)
+
+                quati = state.objects[object_name].orientation
+                qi = Quaternion(w=quati[0],x=quati[1],y=quati[2],z=quati[3])
+                ri = Rotation.from_quat([qi.x, qi.y, qi.z, qi.w])
+                euleri = ri.as_euler('xyz', degrees=False)
+
+                #cost += np.sum((euler0[:2] - euleri[:2]) ** 2) * 5000
 
             cost_sequence.append(cost)
 
@@ -334,11 +359,13 @@ class TrajectoryOptimiserBase:
             objects_forces = self.simulators[sim_name].get_object_forces(self.all_objects_names, self.static_obstacle_names)
 
         robot_in_collision = self.simulators[sim_name].in_collision(self.simulators[sim_name].robot.name, self.static_obstacle_names)
+        ee_velocity = self.simulators[sim_name].get_object_velocity('panda_hand')
 
         return State(self.simulators[sim_name].robot.arm_configuration,
                      self.simulators[sim_name].robot.joint_velocities,
                      self.simulators[sim_name].robot.end_effector_position,
                      Quaternion(self.simulators[sim_name].robot.end_effector_orientation),
+                     ee_velocity,
                      objects,
                      objects_forces,
                      robot_in_collision)

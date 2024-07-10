@@ -17,6 +17,8 @@
 
 import csv
 import time
+import rospy
+import time
 import sys
 from pathlib import Path
 import os
@@ -26,6 +28,43 @@ from discovered_optimisers import all_optimisers
 from threading import Thread
 from simulator import Simulator
 from mujoco_viewer import MujocoViewer
+from sensor_msgs.msg import JointState
+import numpy
+import tf
+from pyquaternion import Quaternion
+
+def relative_to_absolute(robot_position, robot_orientation, object_relative_position, object_relative_orientation):
+    robot_in_world_matrix = robot_orientation.transformation_matrix
+    robot_in_world_matrix[0, 3] = robot_position[0]
+    robot_in_world_matrix[1, 3] = robot_position[1]
+    robot_in_world_matrix[2, 3] = robot_position[2]
+
+    object_in_robot_matrix = object_relative_orientation.transformation_matrix
+    object_in_robot_matrix[0, 3] = object_relative_position[0]
+    object_in_robot_matrix[1, 3] = object_relative_position[1]
+    object_in_robot_matrix[2, 3] = object_relative_position[2]
+
+    object_in_world_matrix = robot_in_world_matrix @ object_in_robot_matrix
+    absolute_orientation = Quaternion(matrix=object_in_world_matrix)
+    absolute_position = numpy.array([
+        object_in_world_matrix[0, 3],
+        object_in_world_matrix[1, 3],
+        object_in_world_matrix[2, 3],
+    ])
+
+    return absolute_position, absolute_orientation
+
+def get_real_robot_joint_angles():
+    joint_angles = None
+    def joint_values_callback(message):
+        nonlocal joint_angles
+        joint_angles = message.position
+
+    rospy.Subscriber('/joint_states', JointState, joint_values_callback)
+    while joint_angles is None and not rospy.is_shutdown():
+        rospy.sleep(0.05)
+
+    return joint_angles
 
 
 def optimiser_factory(optimiser_name, simulator):
@@ -97,13 +136,13 @@ def save_data_to_file(world_name, result):
         update_next_experiment_id_file()
 
 
-def reset_simulation():
+def reset_simulation(sim):
     sim.reset()
     mujoco_viewer.data = sim.data
     mujoco_viewer.model = sim.model
 
 
-def infinitely_execute_trajectory_in_simulation(trajectory):
+def infinitely_execute_trajectory_in_simulation(sim, trajectory):
     while not keyboard_interrupted:
         reset_simulation(sim)
         for arm_controls, gripper_controls in trajectory:
@@ -115,6 +154,112 @@ def infinitely_execute_trajectory_in_simulation(trajectory):
             time.sleep(sim.timestep)
         time.sleep(1)
 
+
+def update_simulator_from_real_world_state_pbpf(pbpf, simulator, trajectory_optimiser, joints=True):
+    optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
+    goal_object_name = optimisation_parameters['goal_object_name']
+
+    robot_position, robot_orientation = simulator.get_object_pose('panda')
+    robot_orientation = Quaternion(robot_orientation)
+
+    other_object_names = optimisation_parameters['other_obstacle_names']
+    all_object_names = [goal_object_name] + other_object_names
+    closest_particle = pbpf.closest_particle
+
+    if closest_particle is None:
+        sys.exit('Error, no particle information')
+
+    for object_name in all_object_names:
+        orientation = particle['quat']
+        position = particle['position']
+        position, orientation = relative_to_absolute(robot_position, robot_orientation, position, orientation)
+        simulator.set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
+        for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
+
+    if joints:
+        config = get_real_robot_joint_angles()
+        simulator.robot.set_arm_configuration(config)
+        for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].robot.set_arm_configuration(config)
+
+    # Bring simulation to stability.
+    for _ in range(100):
+        simulator.robot.set_arm_controls([0.0]*7)
+        simulator.step()
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        for _ in range(50):
+            trajectory_optimiser.simulators[simulator_name].robot.set_arm_controls([0.0]*7)
+            trajectory_optimiser.simulators[simulator_name].step()
+
+    simulator.save_state()
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].save_state()
+
+def update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser, joints=True):
+    optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
+    goal_object_name = optimisation_parameters['goal_object_name']
+
+    robot_position, robot_orientation = simulator.get_object_pose('panda')
+    robot_orientation = Quaternion(robot_orientation)
+
+    other_object_names = optimisation_parameters['other_obstacle_names']
+    all_object_names = [goal_object_name] + other_object_names
+    for object_name in all_object_names:
+        reading = dope.lookup(object_name)
+        if reading is not None:
+            position, orientation = reading
+            orientation = Quaternion(w=orientation[3], x=orientation[0], y=orientation[1], z=orientation[2])
+            position, orientation = relative_to_absolute(robot_position, robot_orientation, position, orientation)
+            simulator.set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
+            for simulator_name in trajectory_optimiser.simulators.keys():
+                trajectory_optimiser.simulators[simulator_name].set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
+
+    if joints:
+        config = get_real_robot_joint_angles()
+        simulator.robot.set_arm_configuration(config)
+        for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].robot.set_arm_configuration(config)
+
+    # Bring simulation to stability.
+    for _ in range(50):
+        simulator.robot.set_arm_controls([0.0]*7)
+        simulator.step()
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        for _ in range(50):
+            trajectory_optimiser.simulators[simulator_name].robot.set_arm_controls([0.0]*7)
+            trajectory_optimiser.simulators[simulator_name].step()
+
+    simulator.save_state()
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        trajectory_optimiser.simulators[simulator_name].save_state()
+
+def visualise_real_world(dope, simulator, trajectory_optimiser):
+    global keyboard_interrupted, mujoco_viewer, sim
+    sim = simulator
+    keyboard_interrupted = False
+    update_simulator_from_real_world_state_dope(dope, sim, trajectory_optimiser)
+
+    pose = simulator.get_object_pose('Parmesan')
+    print('Pose of Parmesan:', pose)
+
+    mujoco_viewer = MujocoViewer(sim.model, sim.data, width=700,
+                                 height=500, title=f'Solving',
+                                 hide_menus=True)
+
+    try:
+        while mujoco_viewer.is_alive:
+            mujoco_viewer.render()
+    except KeyboardInterrupt:
+        pass
+
+    keyboard_interrupted = True
+    mujoco_viewer.close()
+
 def visualise(simulator, trajectory):
     global keyboard_interrupted, mujoco_viewer, sim
     sim = simulator
@@ -124,7 +269,7 @@ def visualise(simulator, trajectory):
                                  height=500, title=f'Solving',
                                  hide_menus=True)
 
-    main_thread = Thread(target=infinitely_execute_trajectory_in_simulation, args=(trajectory,))
+    main_thread = Thread(target=infinitely_execute_trajectory_in_simulation, args=(simulator, trajectory,))
     main_thread.start()
 
     global is_paused
@@ -134,9 +279,29 @@ def visualise(simulator, trajectory):
             is_paused = mujoco_viewer._paused
             mujoco_viewer.render()
     except KeyboardInterrupt:
-        print('Quitting')
+        pass
 
     keyboard_interrupted = True
     mujoco_viewer.close()
     main_thread.join()
 
+def view(simulator):
+    global keyboard_interrupted, mujoco_viewer, sim
+    sim = simulator
+    keyboard_interrupted = False
+
+    mujoco_viewer = MujocoViewer(sim.model, sim.data, width=700,
+                                 height=500, title=f'Solving',
+                                 hide_menus=True)
+
+    global is_paused
+    is_paused = False
+    try:
+        while mujoco_viewer.is_alive:
+            is_paused = mujoco_viewer._paused
+            mujoco_viewer.render()
+    except KeyboardInterrupt:
+        pass
+
+    keyboard_interrupted = True
+    mujoco_viewer.close()
