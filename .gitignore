@@ -1,3 +1,4 @@
+*.swo
 *.swp
 MUJOCO_LOG.TXT
 
