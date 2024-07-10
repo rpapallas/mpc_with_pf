@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>mpc_with_pf</name>
+  <version>0.1.0</version>
+  <description>Optimisation with MPC using PF</description>
+  <maintainer email="r.papallas@leeds.ac.uk">Rafael Papallas</maintainer>
+  <license>MIT</license>
+  <author email="r.papallas@leeds.ac.uk">Rafael Papallas</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <export>
+  </export>
+</package>
