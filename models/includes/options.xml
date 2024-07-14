@@ -1,5 +1,5 @@
 <mujoco>
-    <compiler angle="radian" meshdir="includes/meshes" texturedir="includes/texture" />
+    <compiler angle="radian" meshdir="includes/assets" texturedir="includes/texture" />
 
     <option timestep="0.004" />
 

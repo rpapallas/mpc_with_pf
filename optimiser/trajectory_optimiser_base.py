@@ -15,7 +15,13 @@
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 
-import rospy
+try:
+    import rospy
+    ROS_AVAILABLE = True
+except ImportError:
+    import logging
+    ROS_AVAILABLE = False
+
 import multiprocessing
 import math
 from copy import copy, deepcopy
@@ -29,6 +35,7 @@ from rollout import RollOut
 from states import StateSequence, ObjectState, State
 from trajectory import Trajectory
 from scipy.spatial.transform import Rotation
+from panda_kinematics import PandaWithHandKinematics
 
 
 class TrajectoryOptimiserBase:
@@ -75,8 +82,8 @@ class TrajectoryOptimiserBase:
             hand_final_x = goal_object_position[0]
             hand_final_y = goal_object_position[1]
 
-            desired_xs_1 = np.linspace(hand_initial_x, hand_final_x, num=300)[1:]
-            desired_ys_1 = np.linspace(hand_initial_y, hand_final_y, num=300)[1:]
+            desired_xs_1 = np.linspace(hand_initial_x, hand_final_x, num=20)[1:]
+            desired_ys_1 = np.linspace(hand_initial_y, hand_final_y, num=20)[1:]
 
             hand_initial_x, hand_initial_y = hand_final_x, hand_final_y
 
@@ -84,85 +91,49 @@ class TrajectoryOptimiserBase:
             hand_final_x = goal_region_position[0] - 0.05
             hand_final_y = goal_region_position[1] - 0.05
 
-            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=700)[1:]
-            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=700)[1:]
+            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=100)[1:]
+            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=100)[1:]
 
             desired_xs = np.concatenate([desired_xs_1, desired_xs_2])
             desired_ys = np.concatenate([desired_ys_1, desired_ys_2])
 
             return desired_xs, desired_ys
 
-        def calculate_linear_joint_velocities():
-            hand_current_position = self.simulators['main'].robot.end_effector_position
-            delta_hand_position = desired_hand_position - hand_current_position
-            hand_linear_velocity = delta_hand_position / 0.01
-            return translational_jacobian_transpose @ hand_linear_velocity
-
-        def calculate_angular_joint_velocities():
-            current_hand_orientation = Quaternion(self.simulators['main'].robot.end_effector_orientation)
-
-            desired_hand_orientation = initial_hand_orientation
-            if step % 10 == 0:
-                # Calculate a line along x-axis from hand position
-                hand_current_position = self.simulators['main'].robot.end_effector_position
-                x1, y1 = hand_current_position[:2]
-                x2, y2 = (x1 + 0.5), y1
-                slope_line_hand_straight = (y2 - y1) / (x2 - x1)
-
-                # Calculate a second line from hand position to goal object
-                current_goal_object_position = self.simulators['main'].get_object_position(self.goal_object_name)
-                x2, y2 = current_goal_object_position[:2]
-                slope_line_hand_to_object = (y2 - y1) / (x2 - x1)
-
-                # Find the angle between the two lines, eventually giving a
-                # rotaiton the hand needs to rotate towards the goal object.
-                angle = abs((slope_line_hand_to_object - slope_line_hand_straight) / (
-                        1 + slope_line_hand_straight * slope_line_hand_to_object))
-
-                # Find the angle in radians, and scale it down (scaling is applied
-                # to neglect small angle errors as the hand aligns with the
-                # goal object and avoid overshooting).
-                rad = math.atan(angle) * 0.5
-
-                axis_of_rotation = (1.0, 0.0, 0.0)
-                if y2 > y1:
-                    axis_of_rotation = (-1.0, 0.0, 0.0)
-
-                hand_rotation_towards_goal_object = Quaternion(axis=axis_of_rotation, radians=rad)
-                desired_hand_orientation *= hand_rotation_towards_goal_object
-
-            delta_quaternion = desired_hand_orientation * current_hand_orientation.inverse
-            delta_rotation_radians = delta_quaternion.axis * delta_quaternion.angle
-            hand_angular_velocity = delta_rotation_radians / 0.06
-            return rotational_jacobian_transpose @ hand_angular_velocity
-
         def compute_gripper_controls():
             return np.array([0.0, 0.0])
 
         self.simulators['main'].reset()
 
+        kinematics = PandaWithHandKinematics()
+        initial_joint_positions = self.simulators['main'].robot.arm_configuration
+        prev_config = initial_joint_positions
+
         desired_hand_position = self.simulators['main'].robot.end_effector_position
         initial_hand_orientation = Quaternion(self.simulators['main'].robot.end_effector_orientation)
+        orientation_quat = np.array([initial_hand_orientation.x, initial_hand_orientation.y, initial_hand_orientation.z, initial_hand_orientation.w])
 
         initial_trajectory = Trajectory()
         xs, ys = get_desired_position_waypoints()
         for step, (desired_x, desired_y) in enumerate(zip(xs, ys)):
-            translational_jacobian_transpose = np.transpose(self.simulators['main'].robot.translational_jacobian)
-            rotational_jacobian_transpose = np.transpose(self.simulators['main'].robot.rotational_jacobian)
-
             desired_hand_position[0] = desired_x
             desired_hand_position[1] = desired_y
+            solutions = kinematics.ik(prev_config, desired_hand_position, orientation_quat)
+            collision_free_solutions = []
+            for solution in solutions:
+                self.simulators['main'].robot.set_arm_configuration(solution)
+                if not self.simulators['main'].in_collision('panda', ['floor']):
+                    collision_free_solutions.append(solution)
 
-            joints_linear_velocities = calculate_linear_joint_velocities()
-            joints_angular_velocities = calculate_angular_joint_velocities()
-            arm_controls = joints_linear_velocities + joints_angular_velocities
+            minimum_distance = float('inf')
+            for solution in collision_free_solutions:
+                distance = np.linalg.norm(np.array(solution) - np.array(prev_config))
+                if distance < minimum_distance:
+                    minimum_distance = distance
+                    arm_controls = solution
+
+            prev_config = arm_controls
             gripper_controls = compute_gripper_controls()
-
             initial_trajectory.append([arm_controls, gripper_controls])
-
-            self.simulators['main'].robot.set_arm_controls(arm_controls)
-            self.simulators['main'].robot.set_gripper_controls(gripper_controls)
-            self.simulators['main'].step()
 
         self.simulators['main'].reset()
         return deepcopy(initial_trajectory)
@@ -171,8 +142,8 @@ class TrajectoryOptimiserBase:
         for name in self.simulators.keys():
             self.simulators[name].reset()
 
-        rospy.loginfo('Starting optimisation...')
-        rospy.loginfo(f'Parallel rollouts: {self.num_of_rollouts}')
+        utils.log('Starting optimisation...')
+        utils.log(f'Parallel rollouts: {self.num_of_rollouts}')
 
         optimisation_outcome = OptimisationOutcome.SUCCESS
         iteration = 0
@@ -185,10 +156,10 @@ class TrajectoryOptimiserBase:
         best_rollout = self.rollout(best_trajectory, with_simulator_name='rollout_0')
         initial_cost = best_rollout.cost
 
-        rospy.loginfo(f'Initial cost: {initial_cost:.2f}')
+        utils.log(f'Initial cost: {initial_cost:.2f}')
 
         rollout_times = []
-        rospy.loginfo(f'Initial check of traj took roughly: {time.time() - optimisation_start_time:.2f} seconds.')
+        utils.log(f'Initial check of traj took roughly: {time.time() - optimisation_start_time:.2f} seconds.')
         previous_best_rollout = deepcopy(best_rollout)
 
         time_limit = self.optimisation_parameters['time_limit']
@@ -212,7 +183,7 @@ class TrajectoryOptimiserBase:
 
             previous_best_rollout = deepcopy(best_rollout)
 
-            rospy.loginfo(f'{iteration}: Current cost: {best_rollout.cost:,.2f} (initial: {initial_cost:,.2f}, distance to goal: {best_rollout.distance_to_goal:,.2f})')
+            utils.log(f'{iteration}: Current cost: {best_rollout.cost:,.2f} (initial: {initial_cost:,.2f}, distance to goal: {best_rollout.distance_to_goal:,.2f})')
             planning_time = time.time() - optimisation_start_time
 
             if consecutive_non_improving_iterations >= local_minima_iterations:
@@ -226,7 +197,7 @@ class TrajectoryOptimiserBase:
 
         if len(rollout_times) == 0:
             rollout_times.append(0.0)
-        
+
         return OptimisationResult(
             iterations=iteration,
             outcome=optimisation_outcome,
@@ -281,7 +252,7 @@ class TrajectoryOptimiserBase:
 
         goal_region_position = self.simulators['main'].get_object_position('goal_region')
         goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
-        
+
         goal_object_position = last_state.objects[self.goal_object_name].position
         goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
         distance_to_goal = np.linalg.norm(goal_object_position - goal_region_position)
@@ -317,7 +288,7 @@ class TrajectoryOptimiserBase:
 
             goal_region_position = self.simulators['main'].get_object_position('goal_region')
             goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
-            
+
             goal_object_position = state.objects[self.goal_object_name].position
             goal_object_position = np.array([goal_object_position[0], goal_object_position[1]])
 

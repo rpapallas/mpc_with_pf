@@ -9,7 +9,7 @@
         <include file="includes/camera.xml" />
         <include file="includes/floor.xml" />
 
-        <body name="Parmesan" pos="0.46 -0.1 0.0">
+        <body name="Parmesan" pos="0.46 -0.1 0.0" quat="0.7071068 0 -0.7071068 0">
 	    <geom quat="0.7071068 0 0.7071068 0" mass="0.1" friction="0.1 0.1 0.1" name="geom_Parmesan" rgba="0 1 0. 1" size="0.0325 0.05" type="cylinder" />
             <joint name="joint_Parmesan" type="free" />
         </body>

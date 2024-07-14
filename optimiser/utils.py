@@ -14,10 +14,9 @@
 # this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-
+import logging
 import csv
 import time
-import rospy
 import time
 import sys
 from pathlib import Path
@@ -28,10 +27,14 @@ from discovered_optimisers import all_optimisers
 from threading import Thread
 from simulator import Simulator
 from mujoco_viewer import MujocoViewer
-from sensor_msgs.msg import JointState
 import numpy
-import tf
 from pyquaternion import Quaternion
+try:
+    import rospy
+    from sensor_msgs.msg import JointState
+    ROS_AVAILABLE = True
+except ImportError:
+    ROS_AVAILABLE = False
 
 def relative_to_absolute(robot_position, robot_orientation, object_relative_position, object_relative_orientation):
     robot_in_world_matrix = robot_orientation.transformation_matrix
@@ -55,6 +58,10 @@ def relative_to_absolute(robot_position, robot_orientation, object_relative_posi
     return absolute_position, absolute_orientation
 
 def get_real_robot_joint_angles():
+    if not ROS_AVAILABLE:
+        logging.info('ROS isn\'t available.')
+        return
+
     joint_angles = None
     def joint_values_callback(message):
         nonlocal joint_angles
@@ -156,6 +163,10 @@ def infinitely_execute_trajectory_in_simulation(sim, trajectory):
 
 
 def update_simulator_from_real_world_state_pbpf(pbpf, simulator, trajectory_optimiser, joints=True):
+    if not ROS_AVAILABLE:
+        log('ROS not available, can\'t update the state.')
+        return
+
     optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
     goal_object_name = optimisation_parameters['goal_object_name']
 
@@ -199,6 +210,10 @@ def update_simulator_from_real_world_state_pbpf(pbpf, simulator, trajectory_opti
             trajectory_optimiser.simulators[simulator_name].save_state()
 
 def update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser, joints=True):
+    if not ROS_AVAILABLE:
+        log('ROS not available, can\'t update the state.')
+        return
+
     optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
     goal_object_name = optimisation_parameters['goal_object_name']
 
@@ -305,3 +320,9 @@ def view(simulator):
 
     keyboard_interrupted = True
     mujoco_viewer.close()
+
+def log(message):
+    if ROS_AVAILABLE:
+        rospy.loginfo(message)
+    else:
+        logging.info(message)

@@ -16,12 +16,19 @@
 
 
 import mujoco
-import rospy
+import logging
+
+try:
+    import rospy
+    from std_msgs.msg import Float64MultiArray
+    from sensor_msgs.msg import JointState
+    from controller_manager import ControllerManager
+    ROS_AVAILABLE = False
+except ImportError:
+    ROS_AVAILABLE = False
+
 import numpy as np
 from copy import deepcopy
-from std_msgs.msg import Float64MultiArray
-from controller_manager import ControllerManager
-from sensor_msgs.msg import JointState
 
 
 class RobotBase:
@@ -32,11 +39,13 @@ class RobotBase:
         self.joint_names = joint_names
         self.end_effector_name = end_effector_name
         self.real_robot_set_up = False
-        self.sub = rospy.Subscriber('/joint_states', JointState, self.joint_values_callback)
-        
+
+        if ROS_AVAILABLE:
+            self.sub = rospy.Subscriber('/joint_states', JointState, self.joint_values_callback)
+
     def joint_values_callback(self, message):
         self.joint_angles = message.position[:7]
-        
+
     def set_arm_configuration(self, config):
         for i, joint_name in enumerate(self.joint_names):
             self.data.joint(joint_name).qpos = config[i]
@@ -53,21 +62,31 @@ class RobotBase:
             self.execute_control(control)
 
     def execute_control(self, control):
-        rate = rospy.Rate(1000) # 3000hz
-        positions = Float64MultiArray()
-        positions.data = control
-        for i in range(10):
-            self.joint_positions_publisher.publish(positions)
-            rate.sleep()
+        if ROS_AVAILABLE:
+            rate = rospy.Rate(1000) # 3000hz
+            positions = Float64MultiArray()
+            positions.data = control
+            for i in range(10):
+                self.joint_positions_publisher.publish(positions)
+                rate.sleep()
+        else:
+            logging.info('ROS not available, not executing anything ...')
 
-        # while True:
-        #     distance = np.linalg.norm(np.array(control) - np.array(self.joint_angles))
-        #     print(distance)
-        #     if distance < 0.05:
-        #         break
-            
-        #     self.joint_positions_publisher.publish(positions)
-        #     rate.sleep()
+    def execute_control_with_check(self, control):
+        if ROS_AVAILABLE:
+            rate = rospy.Rate(1000) # 3000hz
+            positions = Float64MultiArray()
+            positions.data = control
+
+            while True:
+                distance = np.linalg.norm(np.array(control) - np.array(self.joint_angles))
+                if distance < 0.05:
+                    break
+
+                self.joint_positions_publisher.publish(positions)
+                rate.sleep()
+        else:
+            logging.info('ROS not available, not executing anything ...')
 
     @property
     def arm_configuration(self):
@@ -120,5 +139,4 @@ class RobotBase:
 
     def set_arm_controls(self, controls):
         for i, joint_name in enumerate(self.joint_names):
-            gravity_compensation = self.data.joint(joint_name).qfrc_bias
-            self.data.actuator(joint_name).ctrl = gravity_compensation + controls[i]
+            self.data.actuator(joint_name).ctrl = controls[i]

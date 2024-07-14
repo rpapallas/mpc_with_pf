@@ -6,7 +6,5 @@
         <material name="matcarpet" texture="carpet"/>
         <texture name="texsponge" type="2d" file="sponge.png"/>
         <material name="sponge" texture="texsponge"/>
-
-
     </asset>
 </mujoco>

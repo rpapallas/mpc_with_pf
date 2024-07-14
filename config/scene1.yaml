@@ -19,7 +19,7 @@ other_obstacle_names:
   - 'Milk'
 static_obstacle_names:
   - 'floor'
-robot_initial_configuration: 
+robot_initial_configuration:
   - -0.937
   - 0.674
   - 0.256

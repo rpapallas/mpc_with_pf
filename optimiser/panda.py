@@ -21,13 +21,13 @@ from robot_base import RobotBase
 
 class Panda(RobotBase):
     def __init__(self, model, data):
-        joint_names = [f'panda_joint{i + 1}' for i in range(7)]
-        end_effector_name = 'panda_hand'
+        joint_names = [f'joint{i + 1}' for i in range(7)]
+        end_effector_name = 'hand'
         super().__init__(model, data, 'panda', joint_names, end_effector_name)
 
     def set_end_effector_configuration(self, opening):
-        self.data.joint('panda_finger_joint1').qpos = opening
-        self.data.joint('panda_finger_joint2').qpos = opening
+        self.data.joint('finger_joint1').qpos = opening
+        self.data.joint('finger_joint2').qpos = opening
         mujoco.mj_forward(self.model, self.data)
 
     def close_gripper(self):
@@ -37,8 +37,8 @@ class Panda(RobotBase):
         self.set_end_effector_configuration(0.04)
 
     def set_gripper_controls(self, controls):
-        self.data.actuator('pos_panda_finger_joint1').ctrl = controls[0]
-        self.data.actuator('pos_panda_finger_joint2').ctrl = controls[1]
+        self.data.actuator('joint7').ctrl = controls[0]
+        self.data.actuator('joint8').ctrl = controls[1]
 
     @property
     def end_effector_configuration(self):

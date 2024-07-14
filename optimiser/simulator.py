@@ -121,6 +121,7 @@ class Simulator:
             self.execute_control(arm_controls, gripper_controls)
 
     def execute_control(self, arm_controls, gripper_controls):
+        # self.robot.set_arm_configuration(arm_controls)
         self.robot.set_arm_controls(deepcopy(arm_controls))
         self.robot.set_gripper_controls(deepcopy(gripper_controls))
         self.step()

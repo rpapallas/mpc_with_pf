@@ -14,25 +14,31 @@
 # this program; if not, write to the Free Software Foundation, Inc., 51
 # Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import logging
 import numpy as np
 from quaternion_averaging import averageQuaternions
 from pyquaternion import Quaternion
-from PBPF.msg import particle_list
 from collections import defaultdict
-import rospy
 import time
-import tf
+try:
+    import rospy
+    from PBPF.msg import particle_list
+    import tf
+    ROS_AVAILABLE = True
+except ImportError:
+    ROS_AVAILABLE = False
 
 class PBPF:
     def __init__(self):
-        self.sub = rospy.Subscriber('/rob_par_list', particle_list, self.particle_filtering_callback)
-        time.sleep(2)
+        if ROS_AVAILABLE:
+            self.sub = rospy.Subscriber('/rob_par_list', particle_list, self.particle_filtering_callback)
+            time.sleep(2)
 
     def __aggregate_objects_and_particles(self, message):
-        objs = defaultdict(lambda: { 
+        objs = defaultdict(lambda: {
             'positions': [],
             'quats': [],
-            'average_position': 0.0, 
+            'average_position': 0.0,
             'average_quat': 0.0,
         })
 
@@ -71,7 +77,7 @@ class PBPF:
     def __compute_averages(self, objs):
         for obj_name in objs.keys():
             avg_position = np.mean(np.array(objs[obj_name]['positions']), axis=0)
-            
+
             quats = np.array([np.array([q.w, q.x, q.y, q.z]) for q in objs[obj_name]['quats']])
             avg_quat = averageQuaternions(quats)
 
@@ -79,7 +85,7 @@ class PBPF:
             objs[obj_name]['average_quat'] = avg_quat
 
         return objs
-    
+
     def __find_closest(self, objs, particles):
         translation_distance_weight = 1.0
         rotational_distance_weight = 0.0
@@ -109,12 +115,17 @@ class PBPF:
 
 class DOPE:
     def __init__(self, transform_to_frame='panda_link0'):
-        self.listener = tf.TransformListener()
+        if ROS_AVAILABLE:
+            self.listener = tf.TransformListener()
         self.transform_to_frame = transform_to_frame
         self.give_up_limit = 5
 
     def lookup(self, name):
         num_of_lookups = 0
+
+        if not ROS_AVAILABLE:
+            logging.info('ROS isn\'t available, nothing is returned...')
+            return
 
         while True:
             try:
@@ -122,7 +133,7 @@ class DOPE:
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 num_of_lookups += 1
                 time.sleep(0.1)
-            
+
             if num_of_lookups > self.give_up_limit:
                 return
 
