@@ -53,10 +53,10 @@ class RobotBase:
             self.execute_control(control)
 
     def execute_control(self, control):
-        rate = rospy.Rate(1000) # 3000hz
+        rate = rospy.Rate(1000)
         positions = Float64MultiArray()
         positions.data = control
-        for i in range(10):
+        for i in range(20):
             self.joint_positions_publisher.publish(positions)
             rate.sleep()
 

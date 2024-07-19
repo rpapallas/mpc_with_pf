@@ -25,14 +25,14 @@
         </body>
 
         <!-- Goal 1 -->
-        <!-- <body pos="0.67 0.074 0" name="goal_region">
-            <site type="cylinder" pos="0 0 0.001" size="0.05 0.0001" rgba="0 1 0 0.4"/>
-        </body> -->
-
-        <!-- Goal 2 -->
-        <body pos="0.4780106 0.26480506 0" name="goal_region">
+        <body pos="0.67 0.074 0" name="goal_region">
             <site type="cylinder" pos="0 0 0.001" size="0.05 0.0001" rgba="0 1 0 0.4"/>
         </body>
+
+        <!-- Goal 2 -->
+        <!-- <body pos="0.4780106 0.26480506 0" name="goal_region">
+            <site type="cylinder" pos="0 0 0.001" size="0.05 0.0001" rgba="0 1 0 0.4"/>
+        </body> -->
 
         <!-- Goal 3 -->
         <!-- <body pos="0.44258413 0.01566753 0" name="goal_region">

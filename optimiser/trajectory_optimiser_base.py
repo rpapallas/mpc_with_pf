@@ -41,6 +41,7 @@ class TrajectoryOptimiserBase:
 
         # Also have a main simulator
         self.simulators['main'] = copy(main_simulator)
+        self.simulators['real'] = copy(main_simulator)
         self.initial_traj_state_sequence = None
 
         # All object names except the goal object name.
@@ -69,9 +70,9 @@ class TrajectoryOptimiserBase:
     @property
     def initial_trajectory(self):
         def get_desired_position_waypoints():
-            hand_initial_x, hand_initial_y, _ = self.simulators['main'].robot.end_effector_position
+            hand_initial_x, hand_initial_y, _ = self.simulators['real'].robot.end_effector_position
 
-            goal_object_position = self.simulators['main'].get_object_position(self.goal_object_name)
+            goal_object_position = self.simulators['real'].get_object_position(self.goal_object_name)
             hand_final_x = goal_object_position[0]
             hand_final_y = goal_object_position[1]
 
@@ -80,12 +81,12 @@ class TrajectoryOptimiserBase:
 
             hand_initial_x, hand_initial_y = hand_final_x, hand_final_y
 
-            goal_region_position = self.simulators['main'].get_object_position('goal_region')
+            goal_region_position = self.simulators['real'].get_object_position('goal_region')
             hand_final_x = goal_region_position[0] - 0.05
             hand_final_y = goal_region_position[1] - 0.05
 
-            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=700)[1:]
-            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=700)[1:]
+            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=900)[1:]
+            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=900)[1:]
 
             desired_xs = np.concatenate([desired_xs_1, desired_xs_2])
             desired_ys = np.concatenate([desired_ys_1, desired_ys_2])
@@ -93,24 +94,24 @@ class TrajectoryOptimiserBase:
             return desired_xs, desired_ys
 
         def calculate_linear_joint_velocities():
-            hand_current_position = self.simulators['main'].robot.end_effector_position
+            hand_current_position = self.simulators['real'].robot.end_effector_position
             delta_hand_position = desired_hand_position - hand_current_position
             hand_linear_velocity = delta_hand_position / 0.01
             return translational_jacobian_transpose @ hand_linear_velocity
 
         def calculate_angular_joint_velocities():
-            current_hand_orientation = Quaternion(self.simulators['main'].robot.end_effector_orientation)
+            current_hand_orientation = Quaternion(self.simulators['real'].robot.end_effector_orientation)
 
             desired_hand_orientation = initial_hand_orientation
             if step % 10 == 0:
                 # Calculate a line along x-axis from hand position
-                hand_current_position = self.simulators['main'].robot.end_effector_position
+                hand_current_position = self.simulators['real'].robot.end_effector_position
                 x1, y1 = hand_current_position[:2]
                 x2, y2 = (x1 + 0.5), y1
                 slope_line_hand_straight = (y2 - y1) / (x2 - x1)
 
                 # Calculate a second line from hand position to goal object
-                current_goal_object_position = self.simulators['main'].get_object_position(self.goal_object_name)
+                current_goal_object_position = self.simulators['real'].get_object_position(self.goal_object_name)
                 x2, y2 = current_goal_object_position[:2]
                 slope_line_hand_to_object = (y2 - y1) / (x2 - x1)
 
@@ -139,16 +140,16 @@ class TrajectoryOptimiserBase:
         def compute_gripper_controls():
             return np.array([0.0, 0.0])
 
-        self.simulators['main'].reset()
+        self.simulators['real'].reset()
 
-        desired_hand_position = self.simulators['main'].robot.end_effector_position
-        initial_hand_orientation = Quaternion(self.simulators['main'].robot.end_effector_orientation)
+        desired_hand_position = self.simulators['real'].robot.end_effector_position
+        initial_hand_orientation = Quaternion(self.simulators['real'].robot.end_effector_orientation)
 
         initial_trajectory = Trajectory()
         xs, ys = get_desired_position_waypoints()
         for step, (desired_x, desired_y) in enumerate(zip(xs, ys)):
-            translational_jacobian_transpose = np.transpose(self.simulators['main'].robot.translational_jacobian)
-            rotational_jacobian_transpose = np.transpose(self.simulators['main'].robot.rotational_jacobian)
+            translational_jacobian_transpose = np.transpose(self.simulators['real'].robot.translational_jacobian)
+            rotational_jacobian_transpose = np.transpose(self.simulators['real'].robot.rotational_jacobian)
 
             desired_hand_position[0] = desired_x
             desired_hand_position[1] = desired_y
@@ -160,11 +161,11 @@ class TrajectoryOptimiserBase:
 
             initial_trajectory.append([arm_controls, gripper_controls])
 
-            self.simulators['main'].robot.set_arm_controls(arm_controls)
-            self.simulators['main'].robot.set_gripper_controls(gripper_controls)
-            self.simulators['main'].step()
+            self.simulators['real'].robot.set_arm_controls(arm_controls)
+            self.simulators['real'].robot.set_gripper_controls(gripper_controls)
+            self.simulators['real'].step()
 
-        self.simulators['main'].reset()
+        self.simulators['real'].reset()
         return deepcopy(initial_trajectory)
 
     def optimise_traj(self, initial_trajectory):
@@ -279,7 +280,7 @@ class TrajectoryOptimiserBase:
         state_sequence = self.get_state_sequence(trajectory, with_simulator_name)
         last_state = state_sequence[-1]
 
-        goal_region_position = self.simulators['main'].get_object_position('goal_region')
+        goal_region_position = self.simulators['real'].get_object_position('goal_region')
         goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
         
         goal_object_position = last_state.objects[self.goal_object_name].position
@@ -306,6 +307,7 @@ class TrajectoryOptimiserBase:
         force_threshold = self.optimisation_parameters['force_threshold']
 
         initial_state = state_sequence[0]
+        initial_hand_z_position = initial_state.hand_position[2]
 
         for i, state in enumerate(state_sequence):
             cost = 0.0
@@ -315,7 +317,7 @@ class TrajectoryOptimiserBase:
 
             cost += abs(sum(state.hand_velocity)) * 3_000
 
-            goal_region_position = self.simulators['main'].get_object_position('goal_region')
+            goal_region_position = self.simulators['real'].get_object_position('goal_region')
             goal_region_position = np.array([goal_region_position[0], goal_region_position[1]])
             
             goal_object_position = state.objects[self.goal_object_name].position
@@ -329,16 +331,19 @@ class TrajectoryOptimiserBase:
             euclidean_distance_hand_to_goal_object = np.linalg.norm(goal_object_position - hand_position)
             cost += euclidean_distance_hand_to_goal_object * 20_000
 
-            for object_name in state.objects.keys():
-                quat0 = initial_state.objects[object_name].orientation
-                q0 = Quaternion(w=quat0[0],x=quat0[1],y=quat0[2],z=quat0[3])
-                r0 = Rotation.from_quat([q0.x, q0.y, q0.z, q0.w])
-                euler0 = r0.as_euler('xyz', degrees=False)
+            hand_z_position = state.hand_position[2]
+            cost += (hand_z_position - initial_hand_z_position) * 45_000
 
-                quati = state.objects[object_name].orientation
-                qi = Quaternion(w=quati[0],x=quati[1],y=quati[2],z=quati[3])
-                ri = Rotation.from_quat([qi.x, qi.y, qi.z, qi.w])
-                euleri = ri.as_euler('xyz', degrees=False)
+            #for object_name in state.objects.keys():
+                #quat0 = initial_state.objects[object_name].orientation
+                #q0 = Quaternion(w=quat0[0],x=quat0[1],y=quat0[2],z=quat0[3])
+                #r0 = Rotation.from_quat([q0.x, q0.y, q0.z, q0.w])
+                #euler0 = r0.as_euler('xyz', degrees=False)
+
+                #quati = state.objects[object_name].orientation
+                #qi = Quaternion(w=quati[0],x=quati[1],y=quati[2],z=quati[3])
+                #ri = Rotation.from_quat([qi.x, qi.y, qi.z, qi.w])
+                #euleri = ri.as_euler('xyz', degrees=False)
 
                 #cost += np.sum((euler0[:2] - euleri[:2]) ** 2) * 5000
 

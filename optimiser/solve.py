@@ -61,9 +61,16 @@ def convert_to_position_traj(traj, steps=None):
         arm_controls, gripper_controls = traj[i]
         simulator.execute_control(arm_controls, gripper_controls)
         position_traj.append(simulator.robot.arm_configuration)
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        for i in range(steps):
+            arm_controls, gripper_controls = traj[i]
+            trajectory_optimiser.simulators[simulator_name].execute_control(arm_controls, gripper_controls)
     
-    # utils.view(simulator)
-    
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        trajectory_optimiser.simulators[simulator_name].save_state()
+
+    simulator.save_state()
     return position_traj
 
 def real_robot_open_loop_execution(experiment_result):
@@ -84,29 +91,25 @@ def goal_object_in_goal_region(simulator, trajectory_optimiser):
     return distance_to_goal <= trajectory_optimiser.optimisation_parameters['distance_to_goal']
 
 def real_robot_dope_mpc_execution(experiment_result):
-    utils.print_optimisation_result(experiment_result)
-    if experiment_result.optimisation_result.outcome != OptimisationOutcome.SUCCESS:
-        sys.exit('Failed')
-        
-    controls_to_execute = 100
-    optimised_traj = experiment_result.optimisation_result.best_trajectory
-    position_traj = convert_to_position_traj(optimised_traj)
-    
-    while not rospy.is_shutdown():
-        for i in range(controls_to_execute):
-            simulator.robot.execute_control(position_traj[i])
-        
-        print('Updated state from DOPE')
-        utils.update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser)
-        
+    controls_to_execute = 200
+    num_controls = len(experiment_result.optimisation_result.best_trajectory)
+    num_of_cycles = num_controls // controls_to_execute
+
+    for _ in range(num_of_cycles):
+        optimised_traj = experiment_result.optimisation_result.best_trajectory
+        position_traj = convert_to_position_traj(optimised_traj, controls_to_execute)
+        for position in position_traj:
+            trajectory_optimiser.simulators['real'].robot.execute_control(position)
+
+        utils.update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser, position_traj[-1])
         optimised_traj = optimised_traj[controls_to_execute:]
-        if optimised_traj == []:
-            break
 
-        # utils.view(simulator)
-        # utils.view(trajectory_optimiser.simulators['rollout_0'])
-
-        return real_robot_dope_mpc_execution(trajectory_optimiser.optimise(optimised_traj))
+        experiment_result = trajectory_optimiser.optimise(optimised_traj)
+        if experiment_result.optimisation_result.outcome != OptimisationOutcome.SUCCESS:
+            print('Optimisation failed.')
+            input('Press ENTER to visualise the remaining trajectory and see where the issue was')
+            utils.visualise(simulator, optimised_traj)
+            sys.exit('Optimisation Failed')
 
 def real_robot_pf_mpc_execution(experiment_result):
     while not rospy.is_shutdown():
@@ -140,6 +143,11 @@ if __name__ == '__main__':
     dope = DOPE()
     pbpf = PBPF()
 
+    for _ in range(3000):
+        simulator.robot.set_arm_controls([0.0]*7)
+        simulator.step()
+    simulator.save_state()
+
     average_particle = None
 
     # `simulator` object as the base simulator for the optimisation. Optimiser will
@@ -147,13 +155,15 @@ if __name__ == '__main__':
     # specific object during optimisation.
     trajectory_optimiser = utils.optimiser_factory(args.optimiser_name, simulator)
 
+    utils.update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser, initial=True)
+
     if args.real_world_state:
         utils.visualise_real_world(dope, simulator, trajectory_optimiser)
     else:
         if not args.open_loop and not args.dope_mpc and not args.pf_mpc1 and not args.pf_mpc2:
             rospy.loginfo('Solving and then executing just in simulation ...')
         else:
-            simulator.robot.setup_trajectory_controller()
+            trajectory_optimiser.simulators['real'].robot.setup_trajectory_controller()
             if args.open_loop:
                 rospy.loginfo('Solving and then executing in real-world using open-loop control...')
             elif args.dope_mpc:
@@ -162,8 +172,6 @@ if __name__ == '__main__':
                 rospy.loginfo('Solving (using particle filtering in planning) and then executing in real-world using particle filtering and MPC ...')
             elif args.pf_mpc2:
                 rospy.loginfo('Solving (not using particle filtering in planning) and then executing in real-world using particle filtering and MPC ...')
-
-        utils.update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser)
 
         if args.view_initial:
             rospy.loginfo('Just visualising initial trajectory...')
@@ -177,7 +185,7 @@ if __name__ == '__main__':
                 sys.exit('Failed')
 
             rospy.loginfo('Visualing the result in simulation first (no real-world execution yet). Press [ESC] in simulator window to continue ...')
-            utils.visualise(simulator, experiment_result.optimisation_result.best_trajectory)
+            #utils.visualise(simulator, experiment_result.optimisation_result.best_trajectory)
 
             if args.open_loop or args.dope_mpc or args.pf_mpc1 or args.pf_mpc2:
                 choice = input('Ready to execute. Should I execute? [y/N]: ')

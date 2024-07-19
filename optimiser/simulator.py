@@ -20,6 +20,7 @@ import numpy as np
 import time
 import mujoco
 import utils
+from pyquaternion import Quaternion
 
 
 class Simulator:
@@ -146,12 +147,12 @@ class Simulator:
         return deepcopy(np.array(object_position))
 
     def get_object_orientation(self, object_name: str):
-        object_orientation = self.data.body(object_name).xquat.copy()
-        return deepcopy(np.array(object_orientation))
+        q = self.data.body(object_name).xquat.copy()
+        return Quaternion(w=q[0], x=q[1], y=q[2], z=q[3])
 
     def get_object_pose(self, object_name: str):
-        object_position = deepcopy(self.get_object_position(object_name))
-        object_orientation = deepcopy(self.get_object_orientation(object_name))
+        object_position = self.get_object_position(object_name)
+        object_orientation = self.get_object_orientation(object_name)
         return object_position, object_orientation
 
     def set_object_pose(self, object_name: str, x=None, y=None, z=None, quaternion=None):
@@ -201,6 +202,23 @@ class Simulator:
             result['conaffinity'].append(self.model.geom_conaffinity[geom_starting_addr + i].copy())
 
         return result
+
+    def object_penetrates(self, target_object_name):
+        target_body_id = self.get_body_id(target_object_name)
+        target_body_id = self.model.body_rootid[target_body_id]
+        number_of_contacts = self.data.ncon
+
+        for i in range(number_of_contacts):
+            contact = self.data.contact[i]
+            body_in_contact_1 = self.model.body_rootid[self.model.geom_bodyid[contact.geom1]]
+            body_in_contact_2 = self.model.body_rootid[self.model.geom_bodyid[contact.geom2]]
+
+            target_object_in_contact = body_in_contact_1 == target_body_id or body_in_contact_2 == target_body_id
+
+            if target_object_in_contact and contact.dist < -0.05:
+                return True
+
+        return False
 
     def in_collision(self, target, others):
         target_body_id = self.get_body_id(target)
