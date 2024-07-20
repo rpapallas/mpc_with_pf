@@ -203,10 +203,13 @@ class Simulator:
 
         return result
 
-    def object_penetrates(self, target_object_name):
+    def object_penetrates(self, target_object_name, others):
         target_body_id = self.get_body_id(target_object_name)
         target_body_id = self.model.body_rootid[target_body_id]
         number_of_contacts = self.data.ncon
+        
+        other_ids = [self.get_body_id(object_name) for object_name in others]
+        other_ids.remove(target_body_id)
 
         for i in range(number_of_contacts):
             contact = self.data.contact[i]
@@ -214,8 +217,9 @@ class Simulator:
             body_in_contact_2 = self.model.body_rootid[self.model.geom_bodyid[contact.geom2]]
 
             target_object_in_contact = body_in_contact_1 == target_body_id or body_in_contact_2 == target_body_id
+            others_in_contact = any([body_in_contact_1 == other_id or body_in_contact_2 == other_id for other_id in other_ids])
 
-            if target_object_in_contact and contact.dist < -0.05:
+            if target_object_in_contact and others_in_contact and contact.dist <= -0.02:
                 return True
 
         return False

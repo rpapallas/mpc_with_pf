@@ -82,11 +82,11 @@ class TrajectoryOptimiserBase:
             hand_initial_x, hand_initial_y = hand_final_x, hand_final_y
 
             goal_region_position = self.simulators['real'].get_object_position('goal_region')
-            hand_final_x = goal_region_position[0] - 0.05
-            hand_final_y = goal_region_position[1] - 0.05
+            hand_final_x = goal_region_position[0]
+            hand_final_y = goal_region_position[1]
 
-            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=900)[1:]
-            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=900)[1:]
+            desired_xs_2 = np.linspace(hand_initial_x, hand_final_x, num=700)[1:]
+            desired_ys_2 = np.linspace(hand_initial_y, hand_final_y, num=700)[1:]
 
             desired_xs = np.concatenate([desired_xs_1, desired_xs_2])
             desired_ys = np.concatenate([desired_ys_1, desired_ys_2])

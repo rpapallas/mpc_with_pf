@@ -33,38 +33,7 @@ import numpy
 import tf
 from pyquaternion import Quaternion
 
-def relative_to_absolute(robot_position, robot_orientation, object_relative_position, object_relative_orientation):
-    robot_in_world_matrix = robot_orientation.transformation_matrix
-    robot_in_world_matrix[0, 3] = robot_position[0]
-    robot_in_world_matrix[1, 3] = robot_position[1]
-    robot_in_world_matrix[2, 3] = robot_position[2]
-
-    object_in_robot_matrix = object_relative_orientation.transformation_matrix
-    object_in_robot_matrix[0, 3] = object_relative_position[0]
-    object_in_robot_matrix[1, 3] = object_relative_position[1]
-    object_in_robot_matrix[2, 3] = object_relative_position[2]
-
-    object_in_world_matrix = robot_in_world_matrix @ object_in_robot_matrix
-    absolute_orientation = Quaternion(matrix=object_in_world_matrix)
-    absolute_position = numpy.array([
-        object_in_world_matrix[0, 3],
-        object_in_world_matrix[1, 3],
-        object_in_world_matrix[2, 3],
-    ])
-
-    return absolute_position, absolute_orientation
-
-def get_real_robot_joint_angles():
-    joint_angles = None
-    def joint_values_callback(message):
-        nonlocal joint_angles
-        joint_angles = message.position
-
-    rospy.Subscriber('/joint_states', JointState, joint_values_callback)
-    while joint_angles is None and not rospy.is_shutdown():
-        rospy.sleep(0.05)
-
-    return joint_angles
+# Misc
 
 def optimiser_factory(optimiser_name, simulator):
     all_optimisers_upper = {key.upper(): value for key, value in all_optimisers.items()}
@@ -79,18 +48,9 @@ def create_simulator(model_filename, Robot):
     model = load_model(model_filename)
     return Simulator(model, model_filename, Robot)
 
-
 def load_model(model_filename):
     root_path = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
     return mujoco.MjModel.from_xml_path(f'{root_path}/models/{model_filename}')
-
-
-def get_optimisation_parameters(yaml_name):
-    root_path = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
-    with open(f'{root_path}/config/{yaml_name}') as file:
-        optimiser_parameters = yaml.safe_load(file)
-        return optimiser_parameters
-
 
 def print_optimisation_result(experiment_result):
     optimisation_result = experiment_result.optimisation_result
@@ -99,46 +59,12 @@ def print_optimisation_result(experiment_result):
     print(f'Average rollout time: {average_rollout_time:.3f} (in {optimisation_result.iterations} iterations)')
     print(f'Planning time: {optimisation_result.planning_time:.3f}')
 
-
-def get_next_experiment_id():
-    root_dir = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
-    path = root_dir / 'results' / 'next_experiment_id.txt'
-    experiment_id = int(path.read_text())
-    return experiment_id
-
-
-def update_next_experiment_id_file():
-    root_dir = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
-    path = root_dir / 'results' / 'next_experiment_id.txt'
-    experiment_id = int(path.read_text())
-    path.write_text(str(experiment_id + 1))
-
-
-def save_data_to_file(world_name, result):
-    root_dir = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
-
-    experiment_id = get_next_experiment_id()
-
-    path = root_dir / 'results' / 'results.csv'
-    with open(path, 'a') as results_file:
-        csv_writer = csv.writer(results_file, delimiter=',', quoting=csv.QUOTE_ALL)
-        csv_writer.writerow([experiment_id,
-                             world_name,
-                             result.optimiser_name,
-                             result.models[-1].outcome.name,
-                             [opt_result.rollout_times for opt_result in result.models],
-                             sum([opt_result.planning_time for opt_result in result.models]),
-                             [opt_result.iterations for opt_result in result.models],
-                             ])
-
-        update_next_experiment_id_file()
-
-
 def reset_simulation(sim):
     sim.reset()
     mujoco_viewer.data = sim.data
     mujoco_viewer.model = sim.model
 
+# Viz
 
 def infinitely_execute_trajectory_in_simulation(sim, trajectory):
     while not keyboard_interrupted:
@@ -152,136 +78,12 @@ def infinitely_execute_trajectory_in_simulation(sim, trajectory):
             time.sleep(sim.timestep)
         time.sleep(1)
 
-
-def update_simulator_from_real_world_state_pbpf(pbpf, simulator, trajectory_optimiser, joints=True):
-    optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
-    goal_object_name = optimisation_parameters['goal_object_name']
-
-    robot_position, robot_orientation = simulator.get_object_pose('panda')
-    robot_orientation = Quaternion(robot_orientation)
-
-    other_object_names = optimisation_parameters['other_obstacle_names']
-    all_object_names = [goal_object_name] + other_object_names
-    closest_particle = pbpf.closest_particle
-
-    if closest_particle is None:
-        sys.exit('Error, no particle information')
-
-    for object_name in all_object_names:
-        orientation = particle['quat']
-        position = particle['position']
-        position, orientation = relative_to_absolute(robot_position, robot_orientation, position, orientation)
-        simulator.set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
-        for simulator_name in trajectory_optimiser.simulators.keys():
-            trajectory_optimiser.simulators[simulator_name].set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
-
-    if joints:
-        config = get_real_robot_joint_angles()
-        simulator.robot.set_arm_configuration(config)
-        for simulator_name in trajectory_optimiser.simulators.keys():
-            trajectory_optimiser.simulators[simulator_name].robot.set_arm_configuration(config)
-
-    # Bring simulation to stability.
-    for _ in range(100):
-        simulator.robot.set_arm_controls([0.0]*7)
-        simulator.step()
-
-    for simulator_name in trajectory_optimiser.simulators.keys():
-        for _ in range(50):
-            trajectory_optimiser.simulators[simulator_name].robot.set_arm_controls([0.0]*7)
-            trajectory_optimiser.simulators[simulator_name].step()
-
-    simulator.save_state()
-
-    for simulator_name in trajectory_optimiser.simulators.keys():
-            trajectory_optimiser.simulators[simulator_name].save_state()
-
-def update_simulator_from_real_world_state_dope(dope, simulator, trajectory_optimiser, pre_config=None, initial=False):
-    optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
-    goal_object_name = optimisation_parameters['goal_object_name']
-    other_object_names = optimisation_parameters['other_obstacle_names']
-    all_object_names = [goal_object_name] + other_object_names
-
-    robot_position, robot_orientation = simulator.get_object_pose('panda')
-    robot_position[2] -= 0.015
-    robot_orientation = Quaternion(robot_orientation)
-
-    original_object_positions = {}
-    for object_name in all_object_names:
-        position, orientation = simulator.get_object_pose(object_name)
-        original_object_positions[object_name] = (position, orientation)
-
-    for object_name in all_object_names:
-        for i in range(5):
-            reading = dope.lookup(object_name)
-            if reading is not None:
-                position, orientation = reading
-                orientation = Quaternion(w=orientation[3], x=orientation[0], y=orientation[1], z=orientation[2])
-                position, orientation = relative_to_absolute(robot_position, robot_orientation, position, orientation)
-
-                original_position, original_orientation = original_object_positions[object_name]
-                if not (not initial and numpy.linalg.norm(original_position[:2] - position[:2]) > 0.1):
-                    break
-        else:
-            position, orientation = original_position, original_orientation
-
-        simulator.set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
-
-    config = get_real_robot_joint_angles() if pre_config is None else pre_config
-
-    if initial:
-        simulator.robot.set_arm_configuration(config)
-        simulator.forward()
-
-    # Bring simulation to stability.
-    objects_in_penetration = {object_name: False for object_name in all_object_names}
-    for _ in range(100):
-        for object_name in all_object_names:
-            if simulator.object_penetrates(object_name):
-                objects_in_penetration[object_name] = True
-        simulator.robot.set_arm_controls([0.0]*7)
-        simulator.step()
-
-    object_new_positions = {}
-    for object_name in all_object_names:
-        position, orientation = simulator.get_object_pose(object_name)
-        if objects_in_penetration[object_name]:
-            original_position, original_orientation = original_object_positions[object_name]
-            rospy.loginfo(f'Object {object_name} penetrates, so not updating its pose from real-world')
-            position = original_position
-            orientation = original_orientation
-
-        object_new_positions[object_name] = (position, orientation)
-    
-    simulator.reset()
-
-    if initial:
-        simulator.robot.set_arm_configuration(config)
-        simulator.forward()
-
-        for simulator_name in trajectory_optimiser.simulators.keys():
-            trajectory_optimiser.simulators[simulator_name].robot.set_arm_configuration(config)
-            trajectory_optimiser.simulators[simulator_name].forward()
-
-    for object_name in all_object_names:
-        position, orientation = object_new_positions[object_name]
-        simulator.set_object_pose(object_name, position[0], position[1], position[2], orientation)
-        simulator.forward()
-        for simulator_name in trajectory_optimiser.simulators.keys():
-            trajectory_optimiser.simulators[simulator_name].set_object_pose(object_name, position[0], position[1], position[2], orientation)
-            trajectory_optimiser.simulators[simulator_name].forward()
-
-    simulator.save_state()
-
-    for simulator_name in trajectory_optimiser.simulators.keys():
-        trajectory_optimiser.simulators[simulator_name].save_state()
-
 def visualise_real_world(dope, simulator, trajectory_optimiser):
     global keyboard_interrupted, mujoco_viewer, sim
     sim = simulator
     keyboard_interrupted = False
 
-    update_simulator_from_real_world_state_dope(dope, sim, trajectory_optimiser)
+    update_simulator_from_real_world_state_dope(dope, True, sim, trajectory_optimiser)
     pose = simulator.get_object_pose('Parmesan')
     print('Pose of Parmesan:', pose)
 
@@ -343,3 +145,172 @@ def view(simulator):
 
     keyboard_interrupted = True
     mujoco_viewer.close()
+
+# MPC
+
+def get_optimisation_parameters(yaml_name):
+    root_path = Path(os.path.dirname(os.path.abspath(__file__))).parent.absolute()
+    with open(f'{root_path}/config/{yaml_name}') as file:
+        optimiser_parameters = yaml.safe_load(file)
+        return optimiser_parameters
+
+def relative_to_absolute(robot_position, robot_orientation, object_relative_position, object_relative_orientation):
+    robot_in_world_matrix = robot_orientation.transformation_matrix
+    robot_in_world_matrix[0, 3] = robot_position[0]
+    robot_in_world_matrix[1, 3] = robot_position[1]
+    robot_in_world_matrix[2, 3] = robot_position[2]
+
+    object_in_robot_matrix = object_relative_orientation.transformation_matrix
+    object_in_robot_matrix[0, 3] = object_relative_position[0]
+    object_in_robot_matrix[1, 3] = object_relative_position[1]
+    object_in_robot_matrix[2, 3] = object_relative_position[2]
+
+    object_in_world_matrix = robot_in_world_matrix @ object_in_robot_matrix
+    absolute_orientation = Quaternion(matrix=object_in_world_matrix)
+    absolute_position = numpy.array([
+        object_in_world_matrix[0, 3],
+        object_in_world_matrix[1, 3],
+        object_in_world_matrix[2, 3],
+    ])
+
+    return absolute_position, absolute_orientation
+
+def get_real_robot_joint_angles():
+    joint_angles = None
+    def joint_values_callback(message):
+        nonlocal joint_angles
+        joint_angles = message.position
+
+    rospy.Subscriber('/joint_states', JointState, joint_values_callback)
+    while joint_angles is None and not rospy.is_shutdown():
+        rospy.sleep(0.05)
+
+    return joint_angles
+
+def compute_relative_pose(simulator, reading):
+    robot_position, robot_orientation = simulator.get_object_pose('panda')
+    robot_orientation = Quaternion(robot_orientation)
+
+    position, orientation = reading
+    orientation = Quaternion(w=orientation[3], x=orientation[0], y=orientation[1], z=orientation[2])
+    position, orientation = relative_to_absolute(robot_position, robot_orientation, position, orientation)
+    return position, orientation
+
+def get_all_object_names(simulator):
+    optimisation_parameters = get_optimisation_parameters(simulator.config_file_path)
+    goal_object_name = optimisation_parameters['goal_object_name']
+    other_object_names = optimisation_parameters['other_obstacle_names']
+    return [goal_object_name] + other_object_names
+
+def get_original_positions(simulator):
+    all_object_names = get_all_object_names(simulator)
+    original_object_positions = {}
+    
+    for object_name in all_object_names:
+        position, orientation = simulator.get_object_pose(object_name)
+        original_object_positions[object_name] = (position, orientation)
+
+    return original_object_positions
+    
+def update_simulator_from_real_world_state_pbpf(pbpf, initial, simulator, trajectory_optimiser):
+    all_object_names = get_all_object_names(simulator)
+    closest_particle = pbpf.closest_particle
+
+    if closest_particle is None:
+        sys.exit('Error, no particle information')
+
+    observed_positions = {}
+    for object_name in all_object_names:
+        position = closest_particle[object_name]['position']
+        orientation = closest_particle[object_name]['quat']
+        position, orientation = compute_relative_pose(simulator, (position, orientation))
+        observed_positions[object_name] = (position, orientation)
+
+    update_and_settle_simulator(simulator, trajectory_optimiser, observed_positions, initial)
+
+def update_simulator_from_real_world_state_dope(dope, initial, simulator, trajectory_optimiser):
+    all_object_names = get_all_object_names(simulator)
+    original_object_positions = get_original_positions(simulator)
+    observed_positions = {}
+
+    if initial:
+        for object_name in all_object_names:
+            reading = dope.lookup(object_name)
+            if reading is not None:
+                position, orientation = compute_relative_pose(simulator, reading)
+                observed_positions[object_name] = (position, orientation)
+    else:
+        for object_name in all_object_names:
+            good_found = False
+            for i in range(10):
+                reading = dope.lookup(object_name)
+                if reading is not None:
+                    position, orientation = compute_relative_pose(simulator, reading)
+                    original_position, original_orientation = original_object_positions[object_name]
+                    if numpy.linalg.norm(original_position[:2] - position[:2]) < 0.15:
+                        observed_positions[object_name] = (position, orientation)
+                        good_found = True
+                        break
+
+            if not good_found:
+                rospy.loginfo(f'***DOPE reading for {object_name} outlier; not updating its position from DOPE')
+                observed_positions[object_name] = (original_position, original_orientation)
+
+    update_and_settle_simulator(simulator, trajectory_optimiser, observed_positions, initial)
+
+def update_and_settle_simulator(simulator, trajectory_optimiser, observed_positions, initial):
+    all_object_names = get_all_object_names(simulator)
+    original_object_positions = get_original_positions(simulator)
+
+    for object_name in all_object_names:
+        position, orientation = observed_positions[object_name]
+        simulator.set_object_pose(object_name, x=position[0], y=position[1], z=position[2], quaternion=orientation)
+
+    config = None
+    if initial:
+        config = get_real_robot_joint_angles()
+        simulator.robot.set_arm_configuration(config)
+        simulator.forward()
+
+    # Bring simulation to stability.
+    objects_in_penetration = {object_name: False for object_name in all_object_names}
+    for _ in range(100):
+        for object_name in all_object_names:
+            if simulator.object_penetrates(object_name, all_object_names + ['panda', 'panda_hand']):
+                objects_in_penetration[object_name] = True
+        simulator.robot.set_arm_controls([0.0]*7)
+        simulator.step()
+
+    object_new_positions = {}
+    for object_name in all_object_names:
+        position, orientation = simulator.get_object_pose(object_name)
+        if objects_in_penetration[object_name]:
+            original_position, original_orientation = original_object_positions[object_name]
+            rospy.loginfo(f'***Object {object_name} penetrates, so not updating its pose from real-world')
+            position = original_position
+            orientation = original_orientation
+
+        object_new_positions[object_name] = (position, orientation)
+    
+    simulator.reset()
+
+    if initial:
+        simulator.robot.set_arm_configuration(config)
+        simulator.forward()
+
+        for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].robot.set_arm_configuration(config)
+            trajectory_optimiser.simulators[simulator_name].forward()
+
+    for object_name in all_object_names:
+        position, orientation = object_new_positions[object_name]
+        simulator.set_object_pose(object_name, position[0], position[1], position[2], orientation)
+        simulator.forward()
+        for simulator_name in trajectory_optimiser.simulators.keys():
+            trajectory_optimiser.simulators[simulator_name].set_object_pose(object_name, position[0], position[1], position[2], orientation)
+            trajectory_optimiser.simulators[simulator_name].forward()
+
+    simulator.save_state()
+
+    for simulator_name in trajectory_optimiser.simulators.keys():
+        trajectory_optimiser.simulators[simulator_name].save_state()
