@@ -81,8 +81,8 @@ class PBPF:
         return objs
     
     def __find_closest(self, objs, particles):
-        translation_distance_weight = 1.0
-        rotational_distance_weight = 0.0
+        translation_distance_weight = 0.7
+        rotational_distance_weight = 0.3
 
         closest_particle = None
         min_distance = float('inf')
@@ -125,6 +125,7 @@ class DOPE:
             
             if num_of_lookups > self.give_up_limit:
                 return
+
 
 if __name__ == '__main__':
     rospy.init_node('dope_listener')

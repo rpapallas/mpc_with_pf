@@ -3,20 +3,18 @@ check_forces: false
 force_threshold: 20
 distance_to_goal: 0.05
 time_limit: 180
-max_iterations: 60
-local_minima_iterations: 30
-number_of_rollouts: 35
+max_iterations: 40
+local_minima_iterations: 15
+number_of_rollouts: 30
 joint_noise_sigmas:
-  - 0.2
-  - 0.2
-  - 0.2
-  - 0.2
-  - 0.2
-  - 0.2
-  - 0.2
-other_obstacle_names:
-  - 'cracker'
-  - 'Milk'
+  - 0.4
+  - 0.4
+  - 0.4
+  - 0.4
+  - 0.4
+  - 0.4
+  - 0.4
+other_obstacle_names: []
 static_obstacle_names:
   - 'floor'
 robot_initial_configuration: 

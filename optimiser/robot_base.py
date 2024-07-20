@@ -56,7 +56,7 @@ class RobotBase:
         rate = rospy.Rate(1000)
         positions = Float64MultiArray()
         positions.data = control
-        for i in range(20):
+        for i in range(30):
             self.joint_positions_publisher.publish(positions)
             rate.sleep()
 
